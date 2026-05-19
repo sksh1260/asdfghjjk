@@ -1,0 +1,34 @@
+﻿{
+  "app_name": "MassRecall SC Evo Launcher",
+  "version": "26.05.09",
+  "launch_after_install": false,
+  "starcraft2_paths": [
+    "C:\\Program Files (x86)\\StarCraft II",
+    "C:\\Program Files\\StarCraft II",
+    "D:\\Program Files (x86)\\StarCraft II",
+    "D:\\Program Files\\StarCraft II"
+  ],
+  "packages": [
+    {
+      "name": "Main files",
+      "url": "https://drive.google.com/file/d/10dY2bqNPpNDpZwNaEjOWp6W6qkucNI50/view?usp=drive_link",
+      "file_name": "main.zip",
+      "target_subdir": "",
+      "sha256": ""
+    },
+    {
+      "name": "Korean voice files",
+      "url": "https://drive.google.com/file/d/16P1eeCS-C2b0QI-fmCEaD8Q5_lKAwPS6/view?usp=drive_link",
+      "file_name": "korean-voice.zip",
+      "target_subdir": "",
+      "sha256": ""
+    },
+    {
+      "name": "English voice files",
+      "url": "https://drive.google.com/file/d/1Xa4nVuvgLnFXdK24e0deMthilHzE7qgA/view?usp=drive_link",
+      "file_name": "english-voice.zip",
+      "target_subdir": "",
+      "sha256": ""
+    }
+  ]
+}
