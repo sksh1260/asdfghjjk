@@ -1,19 +1,20 @@
-# MassRecall SC Evo Launcher
+﻿# MassRecall SC Evo Launcher
 
 Windows launcher that downloads patch archives and extracts them into the StarCraft II installation folder.
 
-`MassRecall SC Evo Launcher.exe` is the ready-to-run launcher. It installs the main archive by copying only the `Mods` and `Maps` folders into the StarCraft II folder. English voice files are optional and install into `Mods` only when the checkbox is selected.
-After installation, downloaded `.7z` archives are deleted from the temp folder, and a `Mass Recall.lnk` shortcut is created on the desktop with paths adjusted to the selected StarCraft II install folder.
+`MassRecall SC Evo Launcher.exe` is the ready-to-run launcher. It installs the main archive by copying only the `Mods` and `Maps` folders into the StarCraft II folder. Korean voice files install by default; when the English voice checkbox is selected, English voice files install instead. Voice archives are flattened so only the two voice mod entries are copied directly into the `Mods` folder.
+After installation, downloaded archives are deleted from the temp folder, and a `Mass Recall.lnk` shortcut is created on the desktop with paths adjusted to the selected StarCraft II install folder.
 The launcher also has an `Uninstall` button. It removes files recorded during installation and deletes the desktop shortcut. The `Remove SCMR.SC2Bank before install` checkbox deletes matching bank files under the user's `Documents\StarCraft II` folder before installing.
 Place `MassRecallBanner.png` next to `MassRecall SC Evo Launcher.exe` to show the banner image at the top of the launcher.
 
 ## Download Links
 
-- Main files: `https://drive.google.com/file/d/1XaP1f1IJseA3f-pa3fCRkGNEzsgAzefg/view?usp=drive_link`
-- English voice files: `https://drive.google.com/file/d/1L5bR4Qh22wT8IOouNxkffX-pTfEjcktW/view?usp=drive_link`
-- Version JSON: `https://drive.google.com/file/d/1fT06Fw_qgM2_4OdrUnyBQXXK1H788wcI/view?usp=drive_link`
+- Main files: `https://drive.google.com/file/d/10dY2bqNPpNDpZwNaEjOWp6W6qkucNI50/view?usp=drive_link`
+- Korean voice files: `https://drive.google.com/file/d/16P1eeCS-C2b0QI-fmCEaD8Q5_lKAwPS6/view?usp=drive_link`
+- English voice files: `https://drive.google.com/file/d/1Xa4nVuvgLnFXdK24e0deMthilHzE7qgA/view?usp=drive_link`
+- Version JSON: `https://drive.google.com/file/d/1XiEN8y6h4VuCCvJUxYnRkFm5ixMQV_jD/view?usp=drive_link`
 
-The C# launcher has these URLs embedded in `MassRecallScEvoLauncher.cs`. `launcher.config.json` is kept for the older PowerShell/Python launcher variants.
+The C# launcher has these URLs embedded in `MassRecallScEvoLauncher.cs` and supports Google Drive file-link downloads directly. Main and voice packages are ZIP files. `launcher.config.json` is kept for the older PowerShell/Python launcher variants; use the C# launcher for the current install behavior.
 
 ## Run
 
