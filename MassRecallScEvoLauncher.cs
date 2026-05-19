@@ -41,15 +41,18 @@ namespace MassRecallScEvo
             new Package(
                 "메인 파일",
                 "https://drive.google.com/file/d/10dY2bqNPpNDpZwNaEjOWp6W6qkucNI50/view?usp=drive_link",
-                "massrecall-main.zip"),
+                "massrecall-main.zip",
+                ""),
             new Package(
                 "한국어 음성 파일",
                 "https://drive.google.com/file/d/16P1eeCS-C2b0QI-fmCEaD8Q5_lKAwPS6/view?usp=drive_link",
-                "massrecall-korean-voice.zip"),
+                "massrecall-korean-voice.zip",
+                ""),
             new Package(
                 "영어 음성 파일",
                 "https://drive.google.com/file/d/1Xa4nVuvgLnFXdK24e0deMthilHzE7qgA/view?usp=drive_link",
-                "massrecall-english-voice.zip")
+                "massrecall-english-voice.zip",
+                "")
         };
 
         [STAThread]
@@ -842,6 +845,11 @@ namespace MassRecallScEvo
 
             private static string ConvertGoogleDriveUrl(string url)
             {
+                return ConvertGoogleDriveUrl(url, null);
+            }
+
+            private static string ConvertGoogleDriveUrl(string url, string fileName)
+            {
                 string fileId = GetGoogleDriveFileId(url);
                 if (!string.IsNullOrEmpty(fileId))
                 {
@@ -856,20 +864,10 @@ namespace MassRecallScEvo
 
                 if (IsGoogleDriveFolderUrl(url))
                 {
-                    throw new InvalidOperationException("Google Drive 폴더 링크는 파일 이름이 필요합니다.");
-                }
-
-                return url;
-            }
-
-            private static string ConvertGoogleDriveUrl(string url, string fileName)
-            {
-                if (IsGoogleDriveFolderUrl(url))
-                {
                     return ResolveGoogleDriveFolderFileUrl(url, fileName);
                 }
 
-                return ConvertGoogleDriveUrl(url);
+                return url;
             }
 
             private static string GetGoogleDriveFileId(string url)
@@ -925,6 +923,7 @@ namespace MassRecallScEvo
                 return new UpdateInfo
                 {
                     Version = ReadJsonString(json, "version"),
+                    Message = ReadJsonString(json, "message"),
                     MainUrl = ReadJsonString(json, "main_url"),
                     KoreanVoiceUrl = ReadJsonString(json, "korean_voice_url"),
                     EnglishVoiceUrl = ReadJsonString(json, "english_voice_url"),
@@ -2281,12 +2280,14 @@ namespace MassRecallScEvo
             public readonly string Name;
             public readonly string Url;
             public readonly string FileName;
+            public readonly string TargetSubdir;
 
-            public Package(string name, string url, string fileName)
+            public Package(string name, string url, string fileName, string targetSubdir)
             {
                 Name = name;
                 Url = url;
                 FileName = fileName;
+                TargetSubdir = targetSubdir;
             }
         }
 
@@ -2307,6 +2308,7 @@ namespace MassRecallScEvo
         private sealed class UpdateInfo
         {
             public string Version;
+            public string Message;
             public string MainUrl;
             public string KoreanVoiceUrl;
             public string EnglishVoiceUrl;
