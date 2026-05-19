@@ -41,18 +41,15 @@ namespace MassRecallScEvo
             new Package(
                 "메인 파일",
                 "https://drive.google.com/file/d/10dY2bqNPpNDpZwNaEjOWp6W6qkucNI50/view?usp=drive_link",
-                "massrecall-main.zip",
-                ""),
+                "massrecall-main.zip"),
             new Package(
                 "한국어 음성 파일",
                 "https://drive.google.com/file/d/16P1eeCS-C2b0QI-fmCEaD8Q5_lKAwPS6/view?usp=drive_link",
-                "massrecall-korean-voice.zip",
-                ""),
+                "massrecall-korean-voice.zip"),
             new Package(
                 "영어 음성 파일",
                 "https://drive.google.com/file/d/1Xa4nVuvgLnFXdK24e0deMthilHzE7qgA/view?usp=drive_link",
-                "massrecall-english-voice.zip",
-                "")
+                "massrecall-english-voice.zip")
         };
 
         [STAThread]
@@ -612,6 +609,17 @@ namespace MassRecallScEvo
                     return;
                 }
 
+                string detectedInstallPath;
+                if (TryDetectExistingInstall(out detectedInstallPath))
+                {
+                    SaveDetectedState(detectedInstallPath);
+                    RefreshUi(false);
+                    statusDot.ForeColor = CyanColor;
+                    statusLabel.Text = "파일 검사 완료";
+                    MessageBox.Show(this, "파일 확인이 완료되었습니다.", "파일 검사", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
                 statusDot.ForeColor = NotInstalledColor;
                 if (HasInstallState())
                 {
@@ -628,7 +636,7 @@ namespace MassRecallScEvo
             {
                 DialogResult result = MessageBox.Show(
                     this,
-                    "이 런처로 설치한 Mass Recall 파일을 제거할까요?",
+                    "파일을 제거할까요?",
                     "제거",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Question);
@@ -834,11 +842,6 @@ namespace MassRecallScEvo
 
             private static string ConvertGoogleDriveUrl(string url)
             {
-                return ConvertGoogleDriveUrl(url, null);
-            }
-
-            private static string ConvertGoogleDriveUrl(string url, string fileName)
-            {
                 string fileId = GetGoogleDriveFileId(url);
                 if (!string.IsNullOrEmpty(fileId))
                 {
@@ -853,10 +856,20 @@ namespace MassRecallScEvo
 
                 if (IsGoogleDriveFolderUrl(url))
                 {
-                    return ResolveGoogleDriveFolderFileUrl(url, fileName);
+                    throw new InvalidOperationException("Google Drive 폴더 링크는 파일 이름이 필요합니다.");
                 }
 
                 return url;
+            }
+
+            private static string ConvertGoogleDriveUrl(string url, string fileName)
+            {
+                if (IsGoogleDriveFolderUrl(url))
+                {
+                    return ResolveGoogleDriveFolderFileUrl(url, fileName);
+                }
+
+                return ConvertGoogleDriveUrl(url);
             }
 
             private static string GetGoogleDriveFileId(string url)
@@ -912,7 +925,6 @@ namespace MassRecallScEvo
                 return new UpdateInfo
                 {
                     Version = ReadJsonString(json, "version"),
-                    Message = ReadJsonString(json, "message"),
                     MainUrl = ReadJsonString(json, "main_url"),
                     KoreanVoiceUrl = ReadJsonString(json, "korean_voice_url"),
                     EnglishVoiceUrl = ReadJsonString(json, "english_voice_url"),
@@ -1767,7 +1779,28 @@ namespace MassRecallScEvo
 
             private static string FindStarCraft2Path()
             {
-                var candidates = new List<string>
+                string knownPath = FindKnownStarCraft2Path();
+                if (!string.IsNullOrEmpty(knownPath))
+                {
+                    return knownPath;
+                }
+
+                using (var dialog = new FolderBrowserDialog())
+                {
+                    dialog.Description = "StarCraft II 설치 폴더를 선택하세요.";
+                    dialog.ShowNewFolderButton = false;
+                    if (dialog.ShowDialog() == DialogResult.OK)
+                    {
+                        return dialog.SelectedPath;
+                    }
+                }
+
+                throw new InvalidOperationException("StarCraft II 설치 폴더가 선택되지 않았습니다.");
+            }
+
+            private static string FindKnownStarCraft2Path()
+            {
+                string[] candidates =
                 {
                     @"C:\Program Files (x86)\StarCraft II",
                     @"C:\Program Files\StarCraft II",
@@ -1784,17 +1817,7 @@ namespace MassRecallScEvo
                     }
                 }
 
-                using (var dialog = new FolderBrowserDialog())
-                {
-                    dialog.Description = "StarCraft II 설치 폴더를 선택하세요.";
-                    dialog.ShowNewFolderButton = false;
-                    if (dialog.ShowDialog() == DialogResult.OK)
-                    {
-                        return dialog.SelectedPath;
-                    }
-                }
-
-                throw new InvalidOperationException("StarCraft II 설치 폴더가 선택되지 않았습니다.");
+                return null;
             }
 
             private static bool IsStarCraft2Path(string path)
@@ -1805,7 +1828,8 @@ namespace MassRecallScEvo
                 }
 
                 return File.Exists(Path.Combine(path, "StarCraft II.exe")) ||
-                    File.Exists(Path.Combine(path, @"Support64\SC2Switcher_x64.exe"));
+                    File.Exists(Path.Combine(path, @"Support64\SC2Switcher_x64.exe")) ||
+                    File.Exists(Path.Combine(path, @"Support\SC2Switcher.exe"));
             }
 
             private static bool IsInstalled()
@@ -1829,8 +1853,7 @@ namespace MassRecallScEvo
                 string manifestPath = Path.Combine(StateDir, "manifest.txt");
                 if (!File.Exists(manifestPath))
                 {
-                    return Directory.Exists(Path.Combine(installPath, "Mods")) &&
-                        Directory.Exists(Path.Combine(installPath, "Maps"));
+                    return HasMassRecallFiles(installPath);
                 }
 
                 bool hasEntries = false;
@@ -1850,6 +1873,64 @@ namespace MassRecallScEvo
                 }
 
                 return hasEntries;
+            }
+
+            private static bool TryDetectExistingInstall(out string installPath)
+            {
+                installPath = null;
+
+                string knownPath = FindKnownStarCraft2Path();
+                if (!string.IsNullOrEmpty(knownPath) && HasMassRecallFiles(knownPath))
+                {
+                    installPath = knownPath;
+                    return true;
+                }
+
+                return false;
+            }
+
+            private static bool HasMassRecallFiles(string installPath)
+            {
+                if (string.IsNullOrEmpty(installPath) || !Directory.Exists(installPath))
+                {
+                    return false;
+                }
+
+                try
+                {
+                    FindCampaignLauncherMap(installPath);
+                }
+                catch
+                {
+                    return false;
+                }
+
+                return HasMassRecallMods(installPath);
+            }
+
+            private static bool HasMassRecallMods(string installPath)
+            {
+                string modsRoot = Path.Combine(installPath, "Mods");
+                if (!Directory.Exists(modsRoot))
+                {
+                    return false;
+                }
+
+                foreach (string entry in Directory.GetFileSystemEntries(modsRoot))
+                {
+                    string name = Path.GetFileName(entry);
+                    if (name.Equals("Assets", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("Local", StringComparison.OrdinalIgnoreCase) ||
+                        name.EndsWith(".SC2Mod", StringComparison.OrdinalIgnoreCase) ||
+                        name.IndexOf("SCMR", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("MassRecall", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Mass Recall", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
             }
 
             private static string GetInstalledVersion()
@@ -1881,6 +1962,24 @@ namespace MassRecallScEvo
                 try
                 {
                     string installPath = ReadInstallPath();
+                    if (string.IsNullOrEmpty(installPath) || !Directory.Exists(installPath))
+                    {
+                        return "";
+                    }
+
+                    string mapPath = FindCampaignLauncherMap(installPath);
+                    return ReadScEvoVersionFromMap(mapPath);
+                }
+                catch
+                {
+                    return "";
+                }
+            }
+
+            private static string GetInstalledMapVersionFromPath(string installPath)
+            {
+                try
+                {
                     if (string.IsNullOrEmpty(installPath) || !Directory.Exists(installPath))
                     {
                         return "";
@@ -2115,6 +2214,20 @@ namespace MassRecallScEvo
                 File.WriteAllLines(Path.Combine(StateDir, "manifest.txt"), InstalledItems.ToArray());
             }
 
+            private static void SaveDetectedState(string installPath)
+            {
+                Directory.CreateDirectory(StateDir);
+                string installedVersion = GetInstalledMapVersionFromPath(installPath);
+                if (string.IsNullOrEmpty(installedVersion))
+                {
+                    installedVersion = Version;
+                }
+
+                File.WriteAllText(Path.Combine(StateDir, "state.txt"), installedVersion);
+                File.WriteAllText(Path.Combine(StateDir, "install-path.txt"), installPath);
+                TryDeleteFile(Path.Combine(StateDir, "manifest.txt"));
+            }
+
             private static string ReadInstallPath()
             {
                 string path = Path.Combine(StateDir, "install-path.txt");
@@ -2168,14 +2281,12 @@ namespace MassRecallScEvo
             public readonly string Name;
             public readonly string Url;
             public readonly string FileName;
-            public readonly string TargetSubdir;
 
-            public Package(string name, string url, string fileName, string targetSubdir)
+            public Package(string name, string url, string fileName)
             {
                 Name = name;
                 Url = url;
                 FileName = fileName;
-                TargetSubdir = targetSubdir;
             }
         }
 
@@ -2196,7 +2307,6 @@ namespace MassRecallScEvo
         private sealed class UpdateInfo
         {
             public string Version;
-            public string Message;
             public string MainUrl;
             public string KoreanVoiceUrl;
             public string EnglishVoiceUrl;

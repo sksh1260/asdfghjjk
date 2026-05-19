@@ -14,21 +14,11 @@ Place `MassRecallBanner.png` next to `MassRecall SC Evo Launcher.exe` to show th
 - English voice files: `https://drive.google.com/file/d/1Xa4nVuvgLnFXdK24e0deMthilHzE7qgA/view?usp=drive_link`
 - Version JSON: `https://drive.google.com/file/d/1XiEN8y6h4VuCCvJUxYnRkFm5ixMQV_jD/view?usp=drive_link`
 
-The C# launcher has these URLs embedded in `MassRecallScEvoLauncher.cs` and supports Google Drive file-link downloads directly. Main and voice packages are ZIP files. `launcher.config.json` is kept for the older PowerShell/Python launcher variants; use the C# launcher for the current install behavior.
+The C# launcher has these URLs embedded in `MassRecallScEvoLauncher.cs` and supports Google Drive file-link downloads directly. Main and voice packages are ZIP files.
 
 ## Run
 
-PowerShell version, no extra runtime:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\launcher.ps1
-```
-
-Python version:
-
-```powershell
-py launcher.py
-```
+Run `MassRecall SC Evo Launcher.exe`.
 
 ## Build the C# exe
 
