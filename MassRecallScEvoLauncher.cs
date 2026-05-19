@@ -28,8 +28,7 @@ namespace MassRecallScEvo
         private const string AppName = "MassRecall SC Evo Launcher";
         private const string Version = "26.05.09";
         private const string LegacyPlaceholderVersion = "1.0.0";
-        private const string LatestInfoUrl = "https://drive.google.com/file/d/1XiEN8y6h4VuCCvJUxYnRkFm5ixMQV_jD/view?usp=drive_link";
-        private const string LatestInfoFileName = "latest.json";
+        private const string LatestInfoUrl = "https://github.com/sksh1260/asdfghjjk/releases/download/SCMR_SC_Evo/SCMR_SCEvo_latest.json";
         private const string ChangeLogUrl = "https://potenking.blogspot.com/2024/04/httpsdrive.html";
         private static readonly string StateDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -40,19 +39,16 @@ namespace MassRecallScEvo
         {
             new Package(
                 "메인 파일",
-                "https://drive.google.com/file/d/10dY2bqNPpNDpZwNaEjOWp6W6qkucNI50/view?usp=drive_link",
-                "massrecall-main.zip",
-                ""),
+                "https://github.com/sksh1260/asdfghjjk/releases/download/SCMR_SC_Evo/SCMR_SCEvo.zip",
+                "massrecall-main.zip"),
             new Package(
                 "한국어 음성 파일",
-                "https://drive.google.com/file/d/16P1eeCS-C2b0QI-fmCEaD8Q5_lKAwPS6/view?usp=drive_link",
-                "massrecall-korean-voice.zip",
-                ""),
+                "https://github.com/sksh1260/asdfghjjk/releases/download/SCMR_SC_Evo/SCMR_SCEvo.KR.VO.Assets.Local.zip",
+                "massrecall-korean-voice.zip"),
             new Package(
                 "영어 음성 파일",
-                "https://drive.google.com/file/d/1Xa4nVuvgLnFXdK24e0deMthilHzE7qgA/view?usp=drive_link",
-                "massrecall-english-voice.zip",
-                "")
+                "https://github.com/sksh1260/asdfghjjk/releases/download/SCMR_SC_Evo/SCMR_SCEvo.EN.VO.Assets.Local.zip",
+                "massrecall-english-voice.zip")
         };
 
         [STAThread]
@@ -724,49 +720,12 @@ namespace MassRecallScEvo
             private string DownloadPackage(Package package, int basePercent, int rangePercent)
             {
                 string target = Path.Combine(Path.GetTempPath(), package.FileName);
-                var cookies = new CookieContainer();
-                string packageUrl = GetPackageUrl(package);
-                string url = ConvertGoogleDriveUrl(packageUrl, package.FileName);
-                string fileId = GetGoogleDriveFileId(packageUrl);
+                DownloadToFile(GetPackageUrl(package), target, basePercent, rangePercent);
 
-                DownloadToFile(url, target, cookies, basePercent, rangePercent);
-
-                string preview = ReadPreview(target);
-                if (LooksLikeHtml(preview))
-                {
-                    string confirmUrl;
-                    if (TryBuildGoogleDriveConfirmationUrl(preview, url, out confirmUrl))
-                    {
-                        DownloadToFile(confirmUrl, target, cookies, basePercent, rangePercent);
-                        preview = ReadPreview(target);
-                    }
-                }
-
-                if (LooksLikeHtml(preview) && IsGoogleDriveQuotaExceeded(preview) && !string.IsNullOrEmpty(fileId))
-                {
-                    string fallbackUrl = "https://drive.usercontent.google.com/download?id=" +
-                        fileId + "&export=download&authuser=0&confirm=t";
-                    DownloadToFile(fallbackUrl, target, cookies, basePercent, rangePercent);
-                    preview = ReadPreview(target);
-                }
-
-                if (LooksLikeHtml(preview))
-                {
-                    SaveHtmlDebug(package, preview);
-                    if (IsGoogleDriveQuotaExceeded(preview))
-                    {
-                        throw new InvalidOperationException(
-                            package.Name + " 다운로드가 Google Drive 다운로드 제한에 걸렸습니다. 잠시 후 다시 시도하세요.");
-                    }
-
-                    throw new InvalidOperationException(
-                        package.Name + " 다운로드가 파일이 아닌 Google Drive 안내 페이지로 처리되었습니다. 링크 공유 권한을 확인하세요.");
-                }
-
-                if (Path.GetExtension(package.FileName).Equals(".zip", StringComparison.OrdinalIgnoreCase) && !LooksLikeZip(target))
+                if (!LooksLikeZip(target))
                 {
                     throw new InvalidOperationException(
-                        package.Name + "이(가) 올바른 zip 파일로 다운로드되지 않았습니다. Google Drive 공유 권한 또는 다운로드 제한을 확인하세요.");
+                        package.Name + "이(가) 올바른 zip 파일로 다운로드되지 않았습니다. GitHub Release 파일을 확인하세요.");
                 }
 
                 return target;
@@ -806,14 +765,12 @@ namespace MassRecallScEvo
             private void DownloadToFile(
                 string url,
                 string target,
-                CookieContainer cookies,
                 int basePercent,
                 int rangePercent)
             {
                 var request = (HttpWebRequest)WebRequest.Create(url);
                 request.UserAgent = "Mozilla/5.0 MassRecallSCEvoLauncher/1.0";
                 request.AllowAutoRedirect = true;
-                request.CookieContainer = cookies;
 
                 using (var response = (HttpWebResponse)request.GetResponse())
                 using (var input = response.GetResponseStream())
@@ -843,87 +800,13 @@ namespace MassRecallScEvo
                 }
             }
 
-            private static string ConvertGoogleDriveUrl(string url)
-            {
-                return ConvertGoogleDriveUrl(url, null);
-            }
-
-            private static string ConvertGoogleDriveUrl(string url, string fileName)
-            {
-                string fileId = GetGoogleDriveFileId(url);
-                if (!string.IsNullOrEmpty(fileId))
-                {
-                    string converted = "https://drive.google.com/uc?export=download&id=" + fileId;
-                    Match resourceKey = Regex.Match(url, "[?&]resourcekey=([^&]+)");
-                    if (resourceKey.Success)
-                    {
-                        converted += "&resourcekey=" + resourceKey.Groups[1].Value;
-                    }
-                    return converted;
-                }
-
-                if (IsGoogleDriveFolderUrl(url))
-                {
-                    return ResolveGoogleDriveFolderFileUrl(url, fileName);
-                }
-
-                return url;
-            }
-
-            private static string GetGoogleDriveFileId(string url)
-            {
-                Match fileMatch = Regex.Match(url, "drive\\.google\\.com/file/d/([^/]+)", RegexOptions.IgnoreCase);
-                if (fileMatch.Success)
-                {
-                    return fileMatch.Groups[1].Value;
-                }
-
-                Match idMatch = Regex.Match(url, "[?&]id=([^&]+)", RegexOptions.IgnoreCase);
-                return idMatch.Success ? idMatch.Groups[1].Value : "";
-            }
-
-            private static bool IsGoogleDriveFolderUrl(string url)
-            {
-                return Regex.IsMatch(url, "drive\\.google\\.com/drive/folders/([^?/&]+)", RegexOptions.IgnoreCase);
-            }
-
-            private static string ResolveGoogleDriveFolderFileUrl(string folderUrl, string fileName)
-            {
-                if (string.IsNullOrEmpty(fileName))
-                {
-                    throw new InvalidOperationException("Google Drive 폴더 링크는 파일 이름이 필요합니다.");
-                }
-
-                string html = DownloadText(folderUrl);
-                string decoded = WebUtility.HtmlDecode(html);
-                string id = FindGoogleDriveFileId(decoded, fileName);
-                if (string.IsNullOrEmpty(id))
-                {
-                    throw new InvalidOperationException("Google Drive 폴더에서 " + fileName + " 파일을 찾지 못했습니다. 파일 이름과 공유 권한을 확인하세요.");
-                }
-
-                return "https://drive.google.com/uc?export=download&id=" + id;
-            }
-
             private static UpdateInfo LoadLatestInfo()
             {
-                string jsonUrl = LatestInfoUrl;
-                string json;
-                if (IsGoogleDriveFolderUrl(jsonUrl))
-                {
-                    jsonUrl = ResolveGoogleDriveFolderFileUrl(jsonUrl, LatestInfoFileName);
-                    json = DownloadText(jsonUrl);
-                }
-                else
-                {
-                    jsonUrl = ConvertGoogleDriveUrl(jsonUrl, LatestInfoFileName);
-                    json = DownloadText(jsonUrl);
-                }
+                string json = DownloadText(LatestInfoUrl);
 
                 return new UpdateInfo
                 {
                     Version = ReadJsonString(json, "version"),
-                    Message = ReadJsonString(json, "message"),
                     MainUrl = ReadJsonString(json, "main_url"),
                     KoreanVoiceUrl = ReadJsonString(json, "korean_voice_url"),
                     EnglishVoiceUrl = ReadJsonString(json, "english_voice_url"),
@@ -934,11 +817,15 @@ namespace MassRecallScEvo
 
             private static string DownloadText(string url)
             {
-                using (var client = new WebClient())
+                var request = (HttpWebRequest)WebRequest.Create(url);
+                request.UserAgent = "Mozilla/5.0 MassRecallSCEvoLauncher/1.0";
+                request.AllowAutoRedirect = true;
+
+                using (var response = (HttpWebResponse)request.GetResponse())
+                using (var input = response.GetResponseStream())
+                using (var reader = new StreamReader(input, Encoding.UTF8))
                 {
-                    client.Encoding = Encoding.UTF8;
-                    client.Headers[HttpRequestHeader.UserAgent] = "Mozilla/5.0 MassRecallSCEvoLauncher/1.0";
-                    return client.DownloadString(url);
+                    return reader.ReadToEnd();
                 }
             }
 
@@ -955,39 +842,6 @@ namespace MassRecallScEvo
                 }
 
                 return Regex.Unescape(match.Groups[1].Value);
-            }
-
-            private static string FindGoogleDriveFileId(string html, string fileName)
-            {
-                string name = Regex.Escape(fileName);
-                string idPattern = "([A-Za-z0-9_-]{20,})";
-                string[] patterns =
-                {
-                    "\"" + idPattern + "\"\\s*,\\s*\"" + name + "\"",
-                    "\"" + name + "\"\\s*,\\s*\"" + idPattern + "\"",
-                    "\\[" + "\\s*\"" + idPattern + "\"\\s*,\\s*\"" + name + "\""
-                };
-
-                foreach (string pattern in patterns)
-                {
-                    Match match = Regex.Match(html, pattern, RegexOptions.IgnoreCase);
-                    if (match.Success)
-                    {
-                        return match.Groups[1].Value;
-                    }
-                }
-
-                int nameIndex = html.IndexOf(fileName, StringComparison.OrdinalIgnoreCase);
-                if (nameIndex < 0)
-                {
-                    return null;
-                }
-
-                int start = Math.Max(0, nameIndex - 600);
-                int length = Math.Min(html.Length - start, 1200);
-                string nearby = html.Substring(start, length);
-                Match nearbyMatch = Regex.Match(nearby, idPattern);
-                return nearbyMatch.Success ? nearbyMatch.Groups[1].Value : null;
             }
 
             private static bool IsNewerVersion(string onlineVersion, string currentVersion)
@@ -1013,101 +867,6 @@ namespace MassRecallScEvo
                 return version.Trim().TrimStart('v', 'V');
             }
 
-            private static bool TryBuildGoogleDriveConfirmationUrl(string html, string originalUrl, out string confirmUrl)
-            {
-                confirmUrl = null;
-
-                Match formMatch = Regex.Match(
-                    html,
-                    "<form[^>]+(?:id=[\"']download-form[\"'][^>]+)?action=[\"']([^\"']+)[\"'][^>]*>",
-                    RegexOptions.IgnoreCase);
-
-                if (formMatch.Success)
-                {
-                    string action = WebUtility.HtmlDecode(formMatch.Groups[1].Value);
-                    var parameters = new List<string>();
-                    MatchCollection inputs = Regex.Matches(
-                        html,
-                        "<input[^>]+type=[\"']hidden[\"'][^>]*>",
-                        RegexOptions.IgnoreCase);
-
-                    foreach (Match input in inputs)
-                    {
-                        Match nameMatch = Regex.Match(input.Value, "name=[\"']([^\"']+)[\"']", RegexOptions.IgnoreCase);
-                        Match valueMatch = Regex.Match(input.Value, "value=[\"']([^\"']*)[\"']", RegexOptions.IgnoreCase);
-                        if (!nameMatch.Success)
-                        {
-                            continue;
-                        }
-
-                        string name = WebUtility.HtmlDecode(nameMatch.Groups[1].Value);
-                        string value = valueMatch.Success ? WebUtility.HtmlDecode(valueMatch.Groups[1].Value) : "";
-                        parameters.Add(Uri.EscapeDataString(name) + "=" + Uri.EscapeDataString(value));
-                    }
-
-                    if (parameters.Count > 0)
-                    {
-                        confirmUrl = action + (action.Contains("?") ? "&" : "?") + string.Join("&", parameters.ToArray());
-                        return true;
-                    }
-                }
-
-                Match hrefMatch = Regex.Match(
-                    html,
-                    "href=[\"']([^\"']*(?:drive\\.usercontent\\.google\\.com/download|/uc\\?export=download)[^\"']+)[\"']",
-                    RegexOptions.IgnoreCase);
-                if (hrefMatch.Success)
-                {
-                    confirmUrl = WebUtility.HtmlDecode(hrefMatch.Groups[1].Value);
-                    if (confirmUrl.StartsWith("/"))
-                    {
-                        confirmUrl = "https://drive.google.com" + confirmUrl;
-                    }
-                    return true;
-                }
-
-                Match confirmMatch = Regex.Match(html, "confirm=([0-9A-Za-z_]+)", RegexOptions.IgnoreCase);
-                Match idMatch = Regex.Match(originalUrl, "id=([^&]+)", RegexOptions.IgnoreCase);
-                if (confirmMatch.Success && idMatch.Success)
-                {
-                    confirmUrl = "https://drive.google.com/uc?export=download&id=" +
-                        idMatch.Groups[1].Value + "&confirm=" + confirmMatch.Groups[1].Value;
-
-                    Match uuidMatch = Regex.Match(html, "uuid=([^&\"'<>]+)", RegexOptions.IgnoreCase);
-                    if (uuidMatch.Success)
-                    {
-                        confirmUrl += "&uuid=" + uuidMatch.Groups[1].Value;
-                    }
-                    return true;
-                }
-
-                return false;
-            }
-
-            private static string ReadPreview(string path)
-            {
-                byte[] buffer = new byte[8192];
-                int read;
-                using (var stream = File.OpenRead(path))
-                {
-                    read = stream.Read(buffer, 0, buffer.Length);
-                }
-                return Encoding.UTF8.GetString(buffer, 0, read);
-            }
-
-            private static bool LooksLikeHtml(string preview)
-            {
-                return preview.IndexOf("<html", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    preview.IndexOf("<!doctype html", StringComparison.OrdinalIgnoreCase) >= 0;
-            }
-
-            private static bool IsGoogleDriveQuotaExceeded(string preview)
-            {
-                return preview.IndexOf("Quota exceeded", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    preview.IndexOf("Too many users have viewed or downloaded this file recently", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    preview.IndexOf("you can't view or download this file at this time", StringComparison.OrdinalIgnoreCase) >= 0;
-            }
-
             private static bool LooksLikeZip(string path)
             {
                 byte[] buffer = new byte[4];
@@ -1120,14 +879,6 @@ namespace MassRecallScEvo
                 }
 
                 return buffer[0] == 0x50 && buffer[1] == 0x4B;
-            }
-
-            private static string SaveHtmlDebug(Package package, string html)
-            {
-                string safeName = Regex.Replace(package.Name, "[^A-Za-z0-9_-]+", "-");
-                string path = Path.Combine(Path.GetTempPath(), "MassRecallSCEvo-" + safeName + "-download.html");
-                File.WriteAllText(path, html, Encoding.UTF8);
-                return path;
             }
 
             private static void ExtractMainPackage(string archivePath, string installPath, bool skipEnglishVoiceFiles)
@@ -1356,72 +1107,21 @@ namespace MassRecallScEvo
             private static void ExtractArchive(Package package, string archivePath, string extractRoot)
             {
                 string extension = Path.GetExtension(archivePath).ToLowerInvariant();
-                if (extension == ".zip")
+                if (extension != ".zip")
                 {
-                    try
-                    {
-                        ZipFile.ExtractToDirectory(archivePath, extractRoot);
-                    }
-                    catch (Exception ex)
-                    {
-                        if (!TryExtractWithTar(archivePath, extractRoot))
-                        {
-                            throw new InvalidOperationException(
-                                package.Name + " ZIP 압축 해제에 실패했습니다: " + ex.Message,
-                                ex);
-                        }
-                    }
-                    return;
+                    throw new InvalidOperationException("지원하지 않는 압축 형식입니다: " + package.Name + " / " + extension);
                 }
 
-                if (extension == ".7z" || extension == ".rar")
+                try
                 {
-                    string sevenZip = FindOnPath("7z.exe");
-                    if (sevenZip != null)
-                    {
-                        var process = Process.Start(new ProcessStartInfo
-                        {
-                            FileName = sevenZip,
-                            Arguments = "x -y -o\"" + extractRoot + "\" \"" + archivePath + "\"",
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        });
-                        process.WaitForExit();
-                        if (process.ExitCode != 0)
-                        {
-                            throw new InvalidOperationException(package.Name + " 압축 해제에 실패했습니다.");
-                        }
-                        return;
-                    }
-
-                    if (TryExtractWithTar(archivePath, extractRoot))
-                    {
-                        return;
-                    }
-
-                    throw new InvalidOperationException(package.Name + "은(는) " + extension + " 형식입니다. 7-Zip 설치 후 런처를 다시 실행하세요.");
+                    ZipFile.ExtractToDirectory(archivePath, extractRoot);
                 }
-
-                throw new InvalidOperationException("지원하지 않는 압축 형식입니다: " + package.Name + " / " + extension);
-            }
-
-            private static bool TryExtractWithTar(string archivePath, string extractRoot)
-            {
-                string tar = FindOnPath("tar.exe");
-                if (tar == null)
+                catch (Exception ex)
                 {
-                    return false;
+                    throw new InvalidOperationException(
+                        package.Name + " ZIP 압축 해제에 실패했습니다: " + ex.Message,
+                        ex);
                 }
-
-                var process = Process.Start(new ProcessStartInfo
-                {
-                    FileName = tar,
-                    Arguments = "-xf \"" + archivePath + "\" -C \"" + extractRoot + "\"",
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                });
-                process.WaitForExit();
-                return process.ExitCode == 0;
             }
 
             private static void CopyNamedDirectory(string searchRoot, string installPath, string[] names, string targetName)
@@ -2238,41 +1938,6 @@ namespace MassRecallScEvo
                 return File.ReadAllText(path).Trim();
             }
 
-            private static string FindOnPath(string fileName)
-            {
-                string[] knownPaths =
-                {
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "7-Zip", fileName),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "7-Zip", fileName),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", fileName)
-                };
-
-                foreach (string knownPath in knownPaths)
-                {
-                    if (File.Exists(knownPath))
-                    {
-                        return knownPath;
-                    }
-                }
-
-                string path = Environment.GetEnvironmentVariable("PATH") ?? "";
-                foreach (string directory in path.Split(Path.PathSeparator))
-                {
-                    try
-                    {
-                        string candidate = Path.Combine(directory.Trim(), fileName);
-                        if (File.Exists(candidate))
-                        {
-                            return candidate;
-                        }
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                return null;
-            }
         }
 
         private sealed class Package
@@ -2280,14 +1945,12 @@ namespace MassRecallScEvo
             public readonly string Name;
             public readonly string Url;
             public readonly string FileName;
-            public readonly string TargetSubdir;
 
-            public Package(string name, string url, string fileName, string targetSubdir)
+            public Package(string name, string url, string fileName)
             {
                 Name = name;
                 Url = url;
                 FileName = fileName;
-                TargetSubdir = targetSubdir;
             }
         }
 
@@ -2308,7 +1971,6 @@ namespace MassRecallScEvo
         private sealed class UpdateInfo
         {
             public string Version;
-            public string Message;
             public string MainUrl;
             public string KoreanVoiceUrl;
             public string EnglishVoiceUrl;
