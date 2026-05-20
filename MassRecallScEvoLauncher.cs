@@ -7,12 +7,15 @@ using System.IO.Compression;
 using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("MassRecall SC Evo Launcher")]
-[assembly: AssemblyDescription("Windows launcher for installing MassRecall SC Evo patch archives")]
+[assembly: AssemblyDescription("Windows installer for StarCraft Mass Recall SC Evo patch archives")]
 [assembly: AssemblyProduct("MassRecall SC Evo Launcher")]
 [assembly: AssemblyCompany("MassRecall SC Evo")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
@@ -30,10 +33,13 @@ namespace MassRecallScEvo
         private const string LegacyPlaceholderVersion = "1.0.0";
         private const string LatestInfoUrl = "https://github.com/sksh1260/asdfghjjk/releases/download/SCMR_SC_Evo/SCMR_SCEvo_latest.json";
         private const string ChangeLogUrl = "https://potenking.blogspot.com/2024/04/httpsdrive.html";
+        private const string HttpUserAgent = "SCMR-SC-Evo-Installer/26.05.09";
         private static readonly string StateDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "MassRecallSCEvoLauncher");
-        private static readonly List<string> InstalledItems = new List<string>();
+        private static readonly DateTime ProcessStartUtc = DateTime.UtcNow;
+        private static readonly object InstalledItemsLock = new object();
+        private static readonly HashSet<string> InstalledItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private static readonly Package[] Packages =
         {
@@ -89,7 +95,6 @@ namespace MassRecallScEvo
             private readonly Label versionLabel;
             private UpdateInfo latestInfo;
             private bool suppressLanguageOptionChange;
-            private static readonly uint[] MpqCryptTable = BuildMpqCryptTable();
 
             public LauncherForm()
             {
@@ -431,8 +436,9 @@ namespace MassRecallScEvo
                             }
                         });
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Debug.WriteLine(ex);
                     }
                 });
             }
@@ -447,8 +453,9 @@ namespace MassRecallScEvo
                         latestInfo = info;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.WriteLine(ex);
                 }
             }
 
@@ -529,35 +536,61 @@ namespace MassRecallScEvo
                 try
                 {
                     string installPath = FindStarCraft2Path();
-                    InstalledItems.Clear();
-                    RefreshLatestInfoForInstall();
-                    if (removeBankCheckBox.Checked)
+                    bool installEnglishVoice = englishVoiceCheckBox.Checked;
+                    bool removeBankFiles = removeBankCheckBox.Checked;
+                    ThreadPool.QueueUserWorkItem(delegate
                     {
-                        SetStatus("SCMR.SC2Bank 제거 중...");
-                        RemoveScmrBankFiles();
-                    }
-                    InstallPackages(installPath, englishVoiceCheckBox.Checked);
-                    CreateDesktopShortcut(installPath);
-                    RefreshLatestInfoForInstall();
-                    SaveState(installPath);
-                    progressBar.Value = 100;
-                    RefreshUi(false);
-                    statusLabel.Text = "설치 완료: " + installPath;
-                    BeginCheckForUpdate();
+                        InstallInBackground(installPath, installEnglishVoice, removeBankFiles);
+                    });
                 }
                 catch (Exception ex)
                 {
+                    FinishBusyState();
                     statusDot.ForeColor = IsInstalled() ? CyanColor : NotInstalledColor;
                     statusLabel.Text = "실패";
                     MessageBox.Show(this, ex.Message, "런처 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
+            }
+
+            private void InstallInBackground(string installPath, bool installEnglishVoice, bool removeBankFiles)
+            {
+                try
+                {
+                    lock (InstalledItemsLock)
+                    {
+                        InstalledItems.Clear();
+                    }
+
+                    RefreshLatestInfoForInstall();
+                    if (removeBankFiles)
+                    {
+                        SetStatus("SCMR.SC2Bank 제거 중...");
+                        RemoveScmrBankFiles();
+                    }
+                    InstallPackages(installPath, installEnglishVoice);
+                    CreateDesktopShortcut(installPath);
+                    RefreshLatestInfoForInstall();
+                    SaveState(installPath);
+                    RunOnUi(delegate
+                    {
+                        progressBar.Value = 100;
+                        RefreshUi(false);
+                        statusLabel.Text = "설치 완료: " + installPath;
+                        BeginCheckForUpdate();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    RunOnUi(delegate
+                    {
+                        statusDot.ForeColor = IsInstalled() ? CyanColor : NotInstalledColor;
+                        statusLabel.Text = "실패";
+                        MessageBox.Show(this, ex.Message, "런처 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    });
+                }
                 finally
                 {
-                    actionButton.Enabled = true;
-                    checkButton.Enabled = true;
-                    RestoreLanguageOptionState();
-                    removeBankCheckBox.Enabled = true;
-                    RefreshUi(false);
+                    RunOnUi(FinishBusyState);
                 }
             }
 
@@ -654,28 +687,48 @@ namespace MassRecallScEvo
                 progressBar.Value = 0;
                 statusDot.ForeColor = InstallingColor;
 
+                ThreadPool.QueueUserWorkItem(delegate
+                {
+                    UninstallInBackground();
+                });
+            }
+
+            private void UninstallInBackground()
+            {
                 try
                 {
                     SetStatus("제거 중...");
                     UninstallMassRecall();
-                    progressBar.Value = 100;
-                    RefreshUi(false);
-                    statusLabel.Text = "제거 완료";
+                    RunOnUi(delegate
+                    {
+                        progressBar.Value = 100;
+                        RefreshUi(false);
+                        statusLabel.Text = "제거 완료";
+                    });
                 }
                 catch (Exception ex)
                 {
-                    statusDot.ForeColor = IsInstalled() ? CyanColor : NotInstalledColor;
-                    statusLabel.Text = "실패";
-                    MessageBox.Show(this, ex.Message, "런처 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    RunOnUi(delegate
+                    {
+                        statusDot.ForeColor = IsInstalled() ? CyanColor : NotInstalledColor;
+                        statusLabel.Text = "실패";
+                        MessageBox.Show(this, ex.Message, "런처 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    });
                 }
                 finally
                 {
-                    actionButton.Enabled = true;
-                    checkButton.Enabled = true;
-                    RestoreLanguageOptionState();
-                    removeBankCheckBox.Enabled = true;
-                    RefreshUi(false);
+                    RunOnUi(FinishBusyState);
                 }
+            }
+
+            private void FinishBusyState()
+            {
+                actionButton.Enabled = true;
+                checkButton.Enabled = true;
+                uninstallButton.Enabled = true;
+                RestoreLanguageOptionState();
+                removeBankCheckBox.Enabled = true;
+                RefreshUi(false);
             }
 
             private void InstallPackages(string installPath, bool installEnglishVoice)
@@ -699,28 +752,46 @@ namespace MassRecallScEvo
 
             private void SetStatus(string text)
             {
-                statusLabel.Text = text;
-                Application.DoEvents();
+                RunOnUi(delegate { statusLabel.Text = text; });
             }
 
             private void SetProgress(int value)
             {
-                progressBar.Value = Math.Max(0, Math.Min(100, value));
-                Application.DoEvents();
+                int percent = Math.Max(0, Math.Min(100, value));
+                RunOnUi(delegate { progressBar.Value = percent; });
             }
 
             private void SetDownloadProgress(int value)
             {
                 int percent = Math.Max(0, Math.Min(100, value));
-                progressBar.Value = percent;
-                statusLabel.Text = "다운로드 중... " + percent + "%";
-                Application.DoEvents();
+                RunOnUi(delegate
+                {
+                    progressBar.Value = percent;
+                    statusLabel.Text = "다운로드 중... " + percent + "%";
+                });
+            }
+
+            private void RunOnUi(MethodInvoker action)
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke(action);
+                    return;
+                }
+
+                action();
             }
 
             private string DownloadPackage(Package package, int basePercent, int rangePercent)
             {
                 string target = Path.Combine(Path.GetTempPath(), package.FileName);
                 DownloadToFile(GetPackageUrl(package), target, basePercent, rangePercent);
+                VerifyPackageSha256(package, target);
 
                 if (!LooksLikeZip(target))
                 {
@@ -768,14 +839,18 @@ namespace MassRecallScEvo
                 int basePercent,
                 int rangePercent)
             {
+                EnsureHttpsUrl(url);
                 var request = (HttpWebRequest)WebRequest.Create(url);
-                request.UserAgent = "Mozilla/5.0 MassRecallSCEvoLauncher/1.0";
+                request.UserAgent = HttpUserAgent;
                 request.AllowAutoRedirect = true;
+                request.Timeout = 30000;
+                request.ReadWriteTimeout = 30000;
 
                 using (var response = (HttpWebResponse)request.GetResponse())
                 using (var input = response.GetResponseStream())
                 using (var output = File.Create(target))
                 {
+                    EnsureHttpsUrl(response.ResponseUri.AbsoluteUri);
                     long total = response.ContentLength;
                     long downloaded = 0;
                     byte[] buffer = new byte[256 * 1024];
@@ -800,6 +875,75 @@ namespace MassRecallScEvo
                 }
             }
 
+            private void VerifyPackageSha256(Package package, string path)
+            {
+                string expected = GetPackageSha256(package);
+                if (string.IsNullOrEmpty(expected))
+                {
+                    return;
+                }
+
+                expected = NormalizeSha256(expected);
+                if (expected.Length != 64)
+                {
+                    throw new InvalidOperationException(package.Name + " SHA256 값 형식이 올바르지 않습니다.");
+                }
+
+                string actual = ComputeSha256(path);
+                if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(package.Name + " SHA256 검증에 실패했습니다.");
+                }
+            }
+
+            private string GetPackageSha256(Package package)
+            {
+                if (latestInfo == null)
+                {
+                    return "";
+                }
+
+                if (package == Packages[0])
+                {
+                    return latestInfo.MainSha256;
+                }
+
+                if (package == Packages[1])
+                {
+                    return latestInfo.KoreanVoiceSha256;
+                }
+
+                if (package == Packages[2])
+                {
+                    return !string.IsNullOrEmpty(latestInfo.EnglishVoiceSha256)
+                        ? latestInfo.EnglishVoiceSha256
+                        : latestInfo.VoiceSha256;
+                }
+
+                return "";
+            }
+
+            private static string NormalizeSha256(string value)
+            {
+                return value.Trim().Replace(" ", "").Replace("-", "").ToLowerInvariant();
+            }
+
+            private static string ComputeSha256(string path)
+            {
+                using (var sha256 = SHA256.Create())
+                using (var input = File.OpenRead(path))
+                {
+                    byte[] hash = sha256.ComputeHash(input);
+                    var builder = new StringBuilder(hash.Length * 2);
+                    foreach (byte b in hash)
+                    {
+                        builder.Append(b.ToString("x2"));
+                    }
+
+                    return builder.ToString();
+                }
+            }
+
             private static UpdateInfo LoadLatestInfo()
             {
                 string json = DownloadText(LatestInfoUrl);
@@ -811,21 +955,39 @@ namespace MassRecallScEvo
                     KoreanVoiceUrl = ReadJsonString(json, "korean_voice_url"),
                     EnglishVoiceUrl = ReadJsonString(json, "english_voice_url"),
                     VoiceUrl = ReadJsonString(json, "voice_url"),
+                    MainSha256 = ReadJsonString(json, "main_sha256"),
+                    KoreanVoiceSha256 = ReadJsonString(json, "korean_voice_sha256"),
+                    EnglishVoiceSha256 = ReadJsonString(json, "english_voice_sha256"),
+                    VoiceSha256 = ReadJsonString(json, "voice_sha256"),
                     ChangeLogUrl = ReadJsonString(json, "changelog_url")
                 };
             }
 
             private static string DownloadText(string url)
             {
+                EnsureHttpsUrl(url);
                 var request = (HttpWebRequest)WebRequest.Create(url);
-                request.UserAgent = "Mozilla/5.0 MassRecallSCEvoLauncher/1.0";
+                request.UserAgent = HttpUserAgent;
                 request.AllowAutoRedirect = true;
+                request.Timeout = 30000;
+                request.ReadWriteTimeout = 30000;
 
                 using (var response = (HttpWebResponse)request.GetResponse())
                 using (var input = response.GetResponseStream())
                 using (var reader = new StreamReader(input, Encoding.UTF8))
                 {
+                    EnsureHttpsUrl(response.ResponseUri.AbsoluteUri);
                     return reader.ReadToEnd();
+                }
+            }
+
+            private static void EnsureHttpsUrl(string url)
+            {
+                Uri uri;
+                if (!Uri.TryCreate(url, UriKind.Absolute, out uri) ||
+                    !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("HTTPS 다운로드 URL만 허용됩니다: " + url);
                 }
             }
 
@@ -1059,6 +1221,11 @@ namespace MassRecallScEvo
                 var expectedNames = new HashSet<string>(copiedNames, StringComparer.OrdinalIgnoreCase);
                 foreach (string directory in Directory.GetDirectories(modsTarget))
                 {
+                    if (Directory.GetCreationTimeUtc(directory) < ProcessStartUtc.AddSeconds(-5))
+                    {
+                        continue;
+                    }
+
                     if (Directory.GetDirectories(directory, "*", SearchOption.AllDirectories).Length > 0)
                     {
                         continue;
@@ -1097,8 +1264,9 @@ namespace MassRecallScEvo
                     ExtractArchive(package, archivePath, tempExtract);
                     return tempExtract;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.WriteLine(ex);
                     TryDeleteDirectory(tempExtract);
                     throw;
                 }
@@ -1114,7 +1282,7 @@ namespace MassRecallScEvo
 
                 try
                 {
-                    ZipFile.ExtractToDirectory(archivePath, extractRoot);
+                    ExtractZipSafely(archivePath, extractRoot);
                 }
                 catch (Exception ex)
                 {
@@ -1122,6 +1290,76 @@ namespace MassRecallScEvo
                         package.Name + " ZIP 압축 해제에 실패했습니다: " + ex.Message,
                         ex);
                 }
+            }
+
+            private static void ExtractZipSafely(string archivePath, string extractRoot)
+            {
+                string normalizedRoot = Path.GetFullPath(extractRoot);
+                if (!normalizedRoot.EndsWith(Path.DirectorySeparatorChar.ToString()))
+                {
+                    normalizedRoot += Path.DirectorySeparatorChar;
+                }
+
+                using (ZipArchive archive = ZipFile.OpenRead(archivePath))
+                {
+                    foreach (ZipArchiveEntry entry in archive.Entries)
+                    {
+                        string entryName = NormalizeZipEntryName(entry.FullName);
+                        if (string.IsNullOrWhiteSpace(entryName))
+                        {
+                            continue;
+                        }
+
+                        if (IsUnsafeZipEntryName(entryName))
+                        {
+                            throw new InvalidOperationException("ZIP 경로가 안전하지 않습니다: " + entry.FullName);
+                        }
+
+                        string destination = Path.GetFullPath(Path.Combine(normalizedRoot, entryName));
+                        if (!destination.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new InvalidOperationException("ZIP 경로가 압축 해제 폴더 밖을 가리킵니다: " + entry.FullName);
+                        }
+
+                        if (entryName.EndsWith(Path.DirectorySeparatorChar.ToString()))
+                        {
+                            Directory.CreateDirectory(destination);
+                            continue;
+                        }
+
+                        Directory.CreateDirectory(Path.GetDirectoryName(destination));
+                        entry.ExtractToFile(destination, true);
+                    }
+                }
+            }
+
+            private static string NormalizeZipEntryName(string entryName)
+            {
+                return (entryName ?? "")
+                    .Replace('/', Path.DirectorySeparatorChar)
+                    .Replace('\\', Path.DirectorySeparatorChar)
+                    .Trim();
+            }
+
+            private static bool IsUnsafeZipEntryName(string entryName)
+            {
+                if (string.IsNullOrWhiteSpace(entryName) ||
+                    Path.IsPathRooted(entryName) ||
+                    entryName.IndexOf(Path.VolumeSeparatorChar) >= 0)
+                {
+                    return true;
+                }
+
+                string[] parts = entryName.Split(Path.DirectorySeparatorChar);
+                foreach (string part in parts)
+                {
+                    if (part == "..")
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
             }
 
             private static void CopyNamedDirectory(string searchRoot, string installPath, string[] names, string targetName)
@@ -1145,7 +1383,7 @@ namespace MassRecallScEvo
             private static string FindFirstDirectory(string root, string[] names)
             {
                 var wanted = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
-                foreach (string directory in Directory.GetDirectories(root, "*", SearchOption.AllDirectories))
+                foreach (string directory in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
                 {
                     if (wanted.Contains(Path.GetFileName(directory)))
                     {
@@ -1215,12 +1453,13 @@ namespace MassRecallScEvo
             {
                 string normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 string normalizedPath = Path.GetFullPath(path);
-                if (normalizedPath.Length <= normalizedRoot.Length)
+                string rootWithSeparator = normalizedRoot + Path.DirectorySeparatorChar;
+                if (!normalizedPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
                 {
-                    return Path.GetFileName(normalizedPath);
+                    throw new InvalidOperationException("복사 대상 경로가 원본 폴더 밖에 있습니다: " + path);
                 }
 
-                return normalizedPath.Substring(normalizedRoot.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                return normalizedPath.Substring(rootWithSeparator.Length);
             }
 
             private static bool IsExcludedByRoot(string source, string path, HashSet<string> excludedRoots)
@@ -1230,7 +1469,7 @@ namespace MassRecallScEvo
                     return false;
                 }
 
-                string relative = path.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string relative = GetRelativePath(source, path);
                 int separator = relative.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar });
                 string rootName = separator >= 0 ? relative.Substring(0, separator) : relative;
                 return excludedRoots.Contains(rootName);
@@ -1239,7 +1478,7 @@ namespace MassRecallScEvo
             private static void AddInstalledItem(string path)
             {
                 string fullPath = Path.GetFullPath(path);
-                if (!InstalledItems.Contains(fullPath))
+                lock (InstalledItemsLock)
                 {
                     InstalledItems.Add(fullPath);
                 }
@@ -1251,11 +1490,12 @@ namespace MassRecallScEvo
                 {
                     if (Directory.Exists(path))
                     {
-                        Directory.Delete(path, true);
+                        DeleteDirectorySafely(path, true);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.WriteLine(ex);
                 }
             }
 
@@ -1268,8 +1508,9 @@ namespace MassRecallScEvo
                         File.Delete(path);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.WriteLine(ex);
                 }
             }
 
@@ -1288,11 +1529,48 @@ namespace MassRecallScEvo
                     }
                     else if (Directory.Exists(path))
                     {
-                        Directory.Delete(path, true);
+                        DeleteDirectorySafely(path, true);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.WriteLine(ex);
+                }
+            }
+
+            private static void DeleteInstalledPath(string installPath, string path)
+            {
+                if (!IsSafeUninstallTarget(installPath, path))
+                {
+                    Debug.WriteLine("Skipped unsafe uninstall target: " + path);
+                    return;
+                }
+
+                DeleteInstalledPath(path);
+            }
+
+            private static void DeleteDirectorySafely(string path, bool recursive)
+            {
+                if (IsReparsePoint(path))
+                {
+                    Debug.WriteLine("Deleting directory reparse point without recursion: " + path);
+                    Directory.Delete(path, false);
+                    return;
+                }
+
+                Directory.Delete(path, recursive);
+            }
+
+            private static bool IsReparsePoint(string path)
+            {
+                try
+                {
+                    return (File.GetAttributes(path) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(ex);
+                    return false;
                 }
             }
 
@@ -1320,13 +1598,29 @@ namespace MassRecallScEvo
                 paths.Sort((left, right) => right.Length.CompareTo(left.Length));
                 foreach (string path in paths)
                 {
-                    DeleteInstalledPath(path);
+                    DeleteInstalledPath(installPath, path);
                 }
 
                 DeleteDesktopShortcut();
                 TryDeleteFile(Path.Combine(StateDir, "state.txt"));
                 TryDeleteFile(Path.Combine(StateDir, "install-path.txt"));
                 TryDeleteFile(manifestPath);
+            }
+
+            private static bool IsSafeUninstallTarget(string installPath, string path)
+            {
+                if (string.IsNullOrEmpty(installPath) || string.IsNullOrEmpty(path))
+                {
+                    return false;
+                }
+
+                string normalizedInstall = Path.GetFullPath(installPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string normalizedPath = Path.GetFullPath(path);
+                string modsRoot = Path.Combine(normalizedInstall, "Mods") + Path.DirectorySeparatorChar;
+                string mapsRoot = Path.Combine(normalizedInstall, "Maps") + Path.DirectorySeparatorChar;
+
+                return normalizedPath.StartsWith(modsRoot, StringComparison.OrdinalIgnoreCase) ||
+                    normalizedPath.StartsWith(mapsRoot, StringComparison.OrdinalIgnoreCase);
             }
 
             private static void AddFallbackUninstallPaths(string installPath, List<string> paths)
@@ -1386,32 +1680,35 @@ namespace MassRecallScEvo
                 string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
                 string shortcutPath = Path.Combine(desktopPath, "Mass Recall.lnk");
 
-                Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-                if (shellType == null)
+                IShellLinkW shortcut = null;
+                try
                 {
-                    throw new InvalidOperationException("Windows 바로가기 생성 기능을 사용할 수 없어 바탕화면 바로가기를 만들지 못했습니다.");
+                    object shellLink = new ShellLink();
+                    shortcut = (IShellLinkW)shellLink;
+                    shortcut.SetPath(targetPath);
+                    shortcut.SetArguments("\"" + mapPath + "\"");
+                    shortcut.SetWorkingDirectory(Path.GetDirectoryName(targetPath));
+                    shortcut.SetDescription("Mass Recall");
+
+                    if (!string.IsNullOrEmpty(iconPath))
+                    {
+                        shortcut.SetIconLocation(iconPath, 0);
+                    }
+
+                    ((IPersistFile)shortcut).Save(shortcutPath, true);
                 }
-
-                object shell = Activator.CreateInstance(shellType);
-                object shortcut = shellType.InvokeMember(
-                    "CreateShortcut",
-                    System.Reflection.BindingFlags.InvokeMethod,
-                    null,
-                    shell,
-                    new object[] { shortcutPath });
-
-                Type shortcutType = shortcut.GetType();
-                shortcutType.InvokeMember("TargetPath", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { targetPath });
-                shortcutType.InvokeMember("Arguments", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { "\"" + mapPath + "\"" });
-                shortcutType.InvokeMember("WorkingDirectory", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { Path.GetDirectoryName(targetPath) });
-                shortcutType.InvokeMember("Description", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { "Mass Recall" });
-
-                if (!string.IsNullOrEmpty(iconPath))
+                finally
                 {
-                    shortcutType.InvokeMember("IconLocation", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { iconPath + ",0" });
+                    ReleaseComObject(shortcut);
                 }
+            }
 
-                shortcutType.InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, shortcut, null);
+            private static void ReleaseComObject(object instance)
+            {
+                if (instance != null && Marshal.IsComObject(instance))
+                {
+                    Marshal.ReleaseComObject(instance);
+                }
             }
 
             private static string FindSwitcherPath(string installPath)
@@ -1448,6 +1745,10 @@ namespace MassRecallScEvo
                     string[] matches = Directory.GetFiles(mapsRoot, "SCMR Campaign Launcher.SC2Map", SearchOption.AllDirectories);
                     if (matches.Length > 0)
                     {
+                        Array.Sort(matches, delegate(string left, string right)
+                        {
+                            return File.GetLastWriteTimeUtc(right).CompareTo(File.GetLastWriteTimeUtc(left));
+                        });
                         return matches[0];
                     }
                 }
@@ -1599,8 +1900,9 @@ namespace MassRecallScEvo
                 {
                     FindCampaignLauncherMap(installPath);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.WriteLine(ex);
                     return false;
                 }
 
@@ -1618,10 +1920,7 @@ namespace MassRecallScEvo
                 foreach (string entry in Directory.GetFileSystemEntries(modsRoot))
                 {
                     string name = Path.GetFileName(entry);
-                    if (name.Equals("Assets", StringComparison.OrdinalIgnoreCase) ||
-                        name.Equals("Local", StringComparison.OrdinalIgnoreCase) ||
-                        name.EndsWith(".SC2Mod", StringComparison.OrdinalIgnoreCase) ||
-                        name.IndexOf("SCMR", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    if (name.IndexOf("SCMR", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         name.IndexOf("MassRecall", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         name.IndexOf("Mass Recall", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
@@ -1634,12 +1933,6 @@ namespace MassRecallScEvo
 
             private static string GetInstalledVersion()
             {
-                string mapVersion = GetInstalledMapVersion();
-                if (!string.IsNullOrEmpty(mapVersion))
-                {
-                    return mapVersion;
-                }
-
                 string statePath = Path.Combine(StateDir, "state.txt");
                 if (!File.Exists(statePath))
                 {
@@ -1656,249 +1949,15 @@ namespace MassRecallScEvo
                 return installedVersion;
             }
 
-            private static string GetInstalledMapVersion()
-            {
-                try
-                {
-                    string installPath = ReadInstallPath();
-                    if (string.IsNullOrEmpty(installPath) || !Directory.Exists(installPath))
-                    {
-                        return "";
-                    }
-
-                    string mapPath = FindCampaignLauncherMap(installPath);
-                    return ReadScEvoVersionFromMap(mapPath);
-                }
-                catch
-                {
-                    return "";
-                }
-            }
-
-            private static string GetInstalledMapVersionFromPath(string installPath)
-            {
-                try
-                {
-                    if (string.IsNullOrEmpty(installPath) || !Directory.Exists(installPath))
-                    {
-                        return "";
-                    }
-
-                    string mapPath = FindCampaignLauncherMap(installPath);
-                    return ReadScEvoVersionFromMap(mapPath);
-                }
-                catch
-                {
-                    return "";
-                }
-            }
-
-            private static string ReadScEvoVersionFromMap(string mapPath)
-            {
-                string[] stringFiles =
-                {
-                    @"koKR.SC2Data\LocalizedData\GameStrings.txt",
-                    @"enUS.SC2Data\LocalizedData\GameStrings.txt"
-                };
-
-                foreach (string stringFile in stringFiles)
-                {
-                    byte[] data = ReadMpqFile(mapPath, stringFile);
-                    if (data == null)
-                    {
-                        continue;
-                    }
-
-                    string text = Encoding.UTF8.GetString(data);
-                    Match match = Regex.Match(text, @"SC Evo\s+([0-9]+(?:\.[0-9]+)+)", RegexOptions.IgnoreCase);
-                    if (match.Success)
-                    {
-                        return match.Groups[1].Value;
-                    }
-                }
-
-                return "";
-            }
-
-            private static byte[] ReadMpqFile(string archivePath, string internalPath)
-            {
-                byte[] archive = File.ReadAllBytes(archivePath);
-                if (archive.Length < 32 || archive[0] != 'M' || archive[1] != 'P' || archive[2] != 'Q' || archive[3] != 0x1A)
-                {
-                    return null;
-                }
-
-                uint hashTableOffset = ReadUInt32LittleEndian(archive, 16);
-                uint blockTableOffset = ReadUInt32LittleEndian(archive, 20);
-                uint hashTableEntries = ReadUInt32LittleEndian(archive, 24);
-                uint blockTableEntries = ReadUInt32LittleEndian(archive, 28);
-                if (hashTableEntries == 0 || blockTableEntries == 0)
-                {
-                    return null;
-                }
-
-                byte[] hashTable = CopyRange(archive, (int)hashTableOffset, (int)hashTableEntries * 16);
-                byte[] blockTable = CopyRange(archive, (int)blockTableOffset, (int)blockTableEntries * 16);
-                DecryptMpqTable(hashTable, HashMpqString("(hash table)", 3));
-                DecryptMpqTable(blockTable, HashMpqString("(block table)", 3));
-
-                uint hashA = HashMpqString(internalPath, 1);
-                uint hashB = HashMpqString(internalPath, 2);
-                uint start = HashMpqString(internalPath, 0) % hashTableEntries;
-                uint blockIndex = 0xFFFFFFFF;
-
-                for (uint probe = 0; probe < hashTableEntries; probe++)
-                {
-                    uint hashIndex = (start + probe) % hashTableEntries;
-                    int entryOffset = (int)hashIndex * 16;
-                    uint entryHashA = ReadUInt32LittleEndian(hashTable, entryOffset);
-                    uint entryHashB = ReadUInt32LittleEndian(hashTable, entryOffset + 4);
-                    uint entryBlockIndex = ReadUInt32LittleEndian(hashTable, entryOffset + 12);
-                    if (entryBlockIndex == 0xFFFFFFFF)
-                    {
-                        return null;
-                    }
-
-                    if (entryHashA == hashA && entryHashB == hashB && entryBlockIndex != 0xFFFFFFFE)
-                    {
-                        blockIndex = entryBlockIndex;
-                        break;
-                    }
-                }
-
-                if (blockIndex == 0xFFFFFFFF || blockIndex >= blockTableEntries)
-                {
-                    return null;
-                }
-
-                int blockOffset = (int)blockIndex * 16;
-                uint fileOffset = ReadUInt32LittleEndian(blockTable, blockOffset);
-                uint compressedSize = ReadUInt32LittleEndian(blockTable, blockOffset + 4);
-                uint fileSize = ReadUInt32LittleEndian(blockTable, blockOffset + 8);
-                uint flags = ReadUInt32LittleEndian(blockTable, blockOffset + 12);
-                byte[] data = CopyRange(archive, (int)fileOffset, (int)compressedSize);
-
-                if ((flags & 0x00010000) != 0)
-                {
-                    DecryptMpqTable(data, HashMpqString(internalPath, 3));
-                }
-
-                if ((flags & 0x00000200) != 0)
-                {
-                    data = DecompressMpqSingleUnit(data, (int)fileSize);
-                }
-
-                return data;
-            }
-
-            private static byte[] DecompressMpqSingleUnit(byte[] data, int expectedSize)
-            {
-                if (data.Length == expectedSize || data.Length == 0)
-                {
-                    return data;
-                }
-
-                byte compression = data[0];
-                if ((compression & 0x02) == 0)
-                {
-                    return data;
-                }
-
-                try
-                {
-                    using (var input = new MemoryStream(data, 3, data.Length - 7))
-                    using (var deflate = new DeflateStream(input, CompressionMode.Decompress))
-                    using (var output = new MemoryStream())
-                    {
-                        deflate.CopyTo(output);
-                        return output.ToArray();
-                    }
-                }
-                catch
-                {
-                    using (var input = new MemoryStream(data, 1, data.Length - 1))
-                    using (var deflate = new DeflateStream(input, CompressionMode.Decompress))
-                    using (var output = new MemoryStream())
-                    {
-                        deflate.CopyTo(output);
-                        return output.ToArray();
-                    }
-                }
-            }
-
-            private static byte[] CopyRange(byte[] source, int offset, int count)
-            {
-                byte[] result = new byte[count];
-                Buffer.BlockCopy(source, offset, result, 0, count);
-                return result;
-            }
-
-            private static uint ReadUInt32LittleEndian(byte[] data, int offset)
-            {
-                return (uint)(data[offset] |
-                    (data[offset + 1] << 8) |
-                    (data[offset + 2] << 16) |
-                    (data[offset + 3] << 24));
-            }
-
-            private static uint[] BuildMpqCryptTable()
-            {
-                uint seed = 0x00100001;
-                uint[] table = new uint[0x500];
-                for (uint index = 0; index < 0x100; index++)
-                {
-                    for (uint i = 0; i < 5; i++)
-                    {
-                        seed = (seed * 125 + 3) % 0x2AAAAB;
-                        uint temp1 = (seed & 0xFFFF) << 16;
-                        seed = (seed * 125 + 3) % 0x2AAAAB;
-                        uint temp2 = seed & 0xFFFF;
-                        table[i * 0x100 + index] = temp1 | temp2;
-                    }
-                }
-
-                return table;
-            }
-
-            private static uint HashMpqString(string text, int hashType)
-            {
-                uint seed1 = 0x7FED7FED;
-                uint seed2 = 0xEEEEEEEE;
-                string normalized = text.Replace('/', '\\').ToUpperInvariant();
-                foreach (char ch in normalized)
-                {
-                    byte value = (byte)ch;
-                    seed1 = MpqCryptTable[(hashType << 8) + value] ^ (seed1 + seed2);
-                    seed2 = value + seed1 + seed2 + (seed2 << 5) + 3;
-                }
-
-                return seed1;
-            }
-
-            private static void DecryptMpqTable(byte[] data, uint key)
-            {
-                uint seed = 0xEEEEEEEE;
-                for (int offset = 0; offset + 3 < data.Length; offset += 4)
-                {
-                    seed += MpqCryptTable[0x400 + (key & 0xFF)];
-                    uint encrypted = ReadUInt32LittleEndian(data, offset);
-                    uint decrypted = encrypted ^ (key + seed);
-                    key = ((~key << 21) + 0x11111111) | (key >> 11);
-                    seed = decrypted + seed + (seed << 5) + 3;
-                    data[offset] = (byte)(decrypted & 0xFF);
-                    data[offset + 1] = (byte)((decrypted >> 8) & 0xFF);
-                    data[offset + 2] = (byte)((decrypted >> 16) & 0xFF);
-                    data[offset + 3] = (byte)((decrypted >> 24) & 0xFF);
-                }
-            }
             private static void TryWriteAllText(string path, string text)
             {
                 try
                 {
                     File.WriteAllText(path, text);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Debug.WriteLine(ex);
                 }
             }
 
@@ -1910,21 +1969,52 @@ namespace MassRecallScEvo
                     : Version;
                 File.WriteAllText(Path.Combine(StateDir, "state.txt"), installedVersion);
                 File.WriteAllText(Path.Combine(StateDir, "install-path.txt"), installPath);
-                File.WriteAllLines(Path.Combine(StateDir, "manifest.txt"), InstalledItems.ToArray());
+                string[] installedItems;
+                lock (InstalledItemsLock)
+                {
+                    installedItems = new string[InstalledItems.Count];
+                    InstalledItems.CopyTo(installedItems);
+                }
+
+                File.WriteAllLines(Path.Combine(StateDir, "manifest.txt"), DistinctPaths(installedItems));
             }
 
             private static void SaveDetectedState(string installPath)
             {
                 Directory.CreateDirectory(StateDir);
-                string installedVersion = GetInstalledMapVersionFromPath(installPath);
-                if (string.IsNullOrEmpty(installedVersion))
+                File.WriteAllText(Path.Combine(StateDir, "state.txt"), Version);
+                File.WriteAllText(Path.Combine(StateDir, "install-path.txt"), installPath);
+                var detectedPaths = new List<string>();
+                AddFallbackUninstallPaths(installPath, detectedPaths);
+                if (detectedPaths.Count > 0)
                 {
-                    installedVersion = Version;
+                    File.WriteAllLines(Path.Combine(StateDir, "manifest.txt"), DistinctPaths(detectedPaths.ToArray()));
+                }
+                else
+                {
+                    TryDeleteFile(Path.Combine(StateDir, "manifest.txt"));
+                }
+            }
+
+            private static string[] DistinctPaths(string[] paths)
+            {
+                var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var result = new List<string>();
+                foreach (string path in paths)
+                {
+                    if (string.IsNullOrWhiteSpace(path))
+                    {
+                        continue;
+                    }
+
+                    string normalized = Path.GetFullPath(path.Trim());
+                    if (unique.Add(normalized))
+                    {
+                        result.Add(normalized);
+                    }
                 }
 
-                File.WriteAllText(Path.Combine(StateDir, "state.txt"), installedVersion);
-                File.WriteAllText(Path.Combine(StateDir, "install-path.txt"), installPath);
-                TryDeleteFile(Path.Combine(StateDir, "manifest.txt"));
+                return result.ToArray();
             }
 
             private static string ReadInstallPath()
@@ -1938,6 +2028,59 @@ namespace MassRecallScEvo
                 return File.ReadAllText(path).Trim();
             }
 
+        }
+
+        [ComImport]
+        [Guid("00021401-0000-0000-C000-000000000046")]
+        private sealed class ShellLink
+        {
+        }
+
+        [ComImport]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        [Guid("000214F9-0000-0000-C000-000000000046")]
+        private interface IShellLinkW
+        {
+            void GetPath(
+                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile,
+                int cchMaxPath,
+                IntPtr pfd,
+                uint fFlags);
+
+            void GetIDList(out IntPtr ppidl);
+            void SetIDList(IntPtr pidl);
+
+            void GetDescription(
+                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName,
+                int cchMaxName);
+
+            void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+
+            void GetWorkingDirectory(
+                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir,
+                int cchMaxPath);
+
+            void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+
+            void GetArguments(
+                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs,
+                int cchMaxPath);
+
+            void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+            void GetHotkey(out short pwHotkey);
+            void SetHotkey(short wHotkey);
+            void GetShowCmd(out int piShowCmd);
+            void SetShowCmd(int iShowCmd);
+
+            void GetIconLocation(
+                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath,
+                int cchIconPath,
+                out int piIcon);
+
+            void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+            void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
+            void Resolve(IntPtr hwnd, uint fFlags);
+            void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
         }
 
         private sealed class Package
@@ -1975,6 +2118,10 @@ namespace MassRecallScEvo
             public string KoreanVoiceUrl;
             public string EnglishVoiceUrl;
             public string VoiceUrl;
+            public string MainSha256;
+            public string KoreanVoiceSha256;
+            public string EnglishVoiceSha256;
+            public string VoiceSha256;
             public string ChangeLogUrl;
         }
     }
