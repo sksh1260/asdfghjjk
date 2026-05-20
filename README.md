@@ -12,6 +12,8 @@ The installer intentionally does not include a custom MPQ decrypt/parser. Instal
 
 Release packaging is intentionally not self-extracting: do not embed the downloaded ZIP archives in the exe, do not use obfuscators, and do not publish as a compressed single-file/self-contained bundle. Ship `MassRecall SC Evo Launcher.exe`; the installer downloads the release ZIP files and verifies SHA256 when hashes are present in the version JSON. For public releases, Authenticode-sign the exe before uploading to reduce SmartScreen and antivirus reputation warnings.
 
+This repository currently builds with the .NET Framework `csc.exe` command below, not `dotnet publish`, so single-file publish, self-contained publish, trimming, and obfuscation are not used. `Directory.Build.props` also keeps `PublishSingleFile`, `SelfContained`, and `PublishTrimmed` disabled if the project is later migrated to an SDK-style `.csproj`.
+
 Optional SHA256 keys supported by the version JSON:
 
 - `main_sha256`
