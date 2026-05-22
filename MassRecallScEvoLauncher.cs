@@ -1,13 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
+using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -37,6 +37,7 @@ namespace MassRecallScEvo
         private static readonly string StateDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "MassRecallSCEvoLauncher");
+        private static readonly string CacheDir = Path.Combine(StateDir, "Cache");
         private static readonly DateTime ProcessStartUtc = DateTime.UtcNow;
         private static readonly object InstalledItemsLock = new object();
         private static readonly HashSet<string> InstalledItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -105,6 +106,9 @@ namespace MassRecallScEvo
                 MaximizeBox = false;
                 StartPosition = FormStartPosition.CenterScreen;
                 Paint += DrawWindowBorder;
+
+                Icon = LoadAppIcon();
+
 
                 var headerTitle = new Label();
                 headerTitle.Text = "MASS RECALL SC EVO LAUNCHER";
@@ -212,7 +216,7 @@ namespace MassRecallScEvo
                 optionPanel.Controls.Add(removeBankCheckBox);
 
                 var bankHelpLabel = new Label();
-                bankHelpLabel.Text = "SC Evo 버전을 처음 설치하시면 체크";
+                bankHelpLabel.Text = "SC Evo 버전 처음 설치 시 체크";
                 bankHelpLabel.Font = new Font("Segoe UI", 9);
                 bankHelpLabel.ForeColor = MutedTextColor;
                 bankHelpLabel.BackColor = Color.Transparent;
@@ -274,6 +278,10 @@ namespace MassRecallScEvo
                 uninstallButton.Enabled = installed || HasInstallState();
                 statusDot.ForeColor = installed ? CyanColor : NotInstalledColor;
                 versionLabel.Visible = installed;
+
+                koreanVoiceCheckBox.Enabled = !installed;
+                englishVoiceCheckBox.Enabled = !installed;
+                removeBankCheckBox.Enabled = !installed;
                 if (!installed)
                 {
                     versionLabel.Text = "";
@@ -471,6 +479,37 @@ namespace MassRecallScEvo
                 return File.Exists(bannerPath) ? Image.FromFile(bannerPath) : null;
             }
 
+            private static Icon LoadAppIcon()
+            {
+                try
+                {
+                    Stream embedded = typeof(Program).Assembly.GetManifestResourceStream("icon.ico");
+                    if (embedded != null)
+                    {
+                        return new Icon(embedded);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(ex);
+                }
+
+                try
+                {
+                    string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "icon.ico");
+                    if (File.Exists(iconPath))
+                    {
+                        return new Icon(iconPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(ex);
+                }
+
+                return null;
+            }
+
             [DllImport("user32.dll")]
             private static extern bool ReleaseCapture();
 
@@ -496,8 +535,9 @@ namespace MassRecallScEvo
                         koreanVoiceCheckBox.Checked = false;
                     }
 
-                    koreanVoiceCheckBox.Enabled = true;
-                    englishVoiceCheckBox.Enabled = true;
+                    bool installed = IsInstalled();
+                    koreanVoiceCheckBox.Enabled = !installed;
+                    englishVoiceCheckBox.Enabled = !installed;
                 }
                 finally
                 {
@@ -507,8 +547,9 @@ namespace MassRecallScEvo
 
             private void RestoreLanguageOptionState()
             {
-                koreanVoiceCheckBox.Enabled = true;
-                englishVoiceCheckBox.Enabled = true;
+                bool installed = IsInstalled();
+                koreanVoiceCheckBox.Enabled = !installed;
+                englishVoiceCheckBox.Enabled = !installed;
                 OnLanguageOptionChanged(null, EventArgs.Empty);
             }
             private void OnActionClick(object sender, EventArgs e)
@@ -568,7 +609,6 @@ namespace MassRecallScEvo
                         RemoveScmrBankFiles();
                     }
                     InstallPackages(installPath, installEnglishVoice);
-                    CreateDesktopShortcut(installPath);
                     RefreshLatestInfoForInstall();
                     SaveState(installPath);
                     RunOnUi(delegate
@@ -727,7 +767,7 @@ namespace MassRecallScEvo
                 checkButton.Enabled = true;
                 uninstallButton.Enabled = true;
                 RestoreLanguageOptionState();
-                removeBankCheckBox.Enabled = true;
+                removeBankCheckBox.Enabled = !IsInstalled();
                 RefreshUi(false);
             }
 
@@ -789,7 +829,8 @@ namespace MassRecallScEvo
 
             private string DownloadPackage(Package package, int basePercent, int rangePercent)
             {
-                string target = Path.Combine(Path.GetTempPath(), package.FileName);
+                Directory.CreateDirectory(CacheDir);
+                string target = Path.Combine(CacheDir, package.FileName);
                 DownloadToFile(GetPackageUrl(package), target, basePercent, rangePercent);
                 VerifyPackageSha256(package, target);
 
@@ -840,18 +881,17 @@ namespace MassRecallScEvo
                 int rangePercent)
             {
                 EnsureHttpsUrl(url);
-                var request = (HttpWebRequest)WebRequest.Create(url);
-                request.UserAgent = HttpUserAgent;
-                request.AllowAutoRedirect = true;
-                request.Timeout = 30000;
-                request.ReadWriteTimeout = 30000;
-
-                using (var response = (HttpWebResponse)request.GetResponse())
-                using (var input = response.GetResponseStream())
+                using (HttpClient client = CreateHttpClient())
+                using (HttpResponseMessage response = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).Result)
+                {
+                    response.EnsureSuccessStatusCode();
+                    EnsureHttpsUrl(response.RequestMessage.RequestUri.AbsoluteUri);
+                    using (var input = response.Content.ReadAsStreamAsync().Result)
                 using (var output = File.Create(target))
                 {
-                    EnsureHttpsUrl(response.ResponseUri.AbsoluteUri);
-                    long total = response.ContentLength;
+                    long total = response.Content.Headers.ContentLength.HasValue
+                        ? response.Content.Headers.ContentLength.Value
+                        : -1;
                     long downloaded = 0;
                     byte[] buffer = new byte[256 * 1024];
 
@@ -872,6 +912,7 @@ namespace MassRecallScEvo
                             SetDownloadProgress(percent);
                         }
                     }
+                }
                 }
             }
 
@@ -966,19 +1007,29 @@ namespace MassRecallScEvo
             private static string DownloadText(string url)
             {
                 EnsureHttpsUrl(url);
-                var request = (HttpWebRequest)WebRequest.Create(url);
-                request.UserAgent = HttpUserAgent;
-                request.AllowAutoRedirect = true;
-                request.Timeout = 30000;
-                request.ReadWriteTimeout = 30000;
-
-                using (var response = (HttpWebResponse)request.GetResponse())
-                using (var input = response.GetResponseStream())
-                using (var reader = new StreamReader(input, Encoding.UTF8))
+                using (HttpClient client = CreateHttpClient())
+                using (HttpResponseMessage response = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).Result)
                 {
-                    EnsureHttpsUrl(response.ResponseUri.AbsoluteUri);
-                    return reader.ReadToEnd();
+                    response.EnsureSuccessStatusCode();
+                    EnsureHttpsUrl(response.RequestMessage.RequestUri.AbsoluteUri);
+                    using (var input = response.Content.ReadAsStreamAsync().Result)
+                    using (var reader = new StreamReader(input, Encoding.UTF8))
+                    {
+                        return reader.ReadToEnd();
+                    }
                 }
+            }
+
+            private static HttpClient CreateHttpClient()
+            {
+                var handler = new HttpClientHandler
+                {
+                    AllowAutoRedirect = true
+                };
+                var client = new HttpClient(handler);
+                client.Timeout = TimeSpan.FromSeconds(30);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(HttpUserAgent);
+                return client;
             }
 
             private static void EnsureHttpsUrl(string url)
@@ -1256,7 +1307,8 @@ namespace MassRecallScEvo
 
             private static string ExtractArchiveToTemp(Package package, string archivePath)
             {
-                string tempExtract = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(CacheDir);
+                string tempExtract = Path.Combine(CacheDir, "extract-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(tempExtract);
 
                 try
@@ -1505,6 +1557,11 @@ namespace MassRecallScEvo
                 {
                     if (!string.IsNullOrEmpty(path) && File.Exists(path))
                     {
+                        FileAttributes attributes = File.GetAttributes(path);
+                        if ((attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                        {
+                            File.SetAttributes(path, FileAttributes.Normal);
+                        }
                         File.Delete(path);
                     }
                 }
@@ -1558,6 +1615,35 @@ namespace MassRecallScEvo
                     return;
                 }
 
+                if (recursive)
+                {
+                    try
+                    {
+                        var di = new DirectoryInfo(path);
+                        if (di.Exists)
+                        {
+                            foreach (FileInfo file in di.GetFiles("*", SearchOption.AllDirectories))
+                            {
+                                if ((file.Attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                                {
+                                    file.Attributes = FileAttributes.Normal;
+                                }
+                            }
+                            foreach (DirectoryInfo dir in di.GetDirectories("*", SearchOption.AllDirectories))
+                            {
+                                if ((dir.Attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                                {
+                                    dir.Attributes = FileAttributes.Normal;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine("Failed to strip ReadOnly attributes: " + ex.Message);
+                    }
+                }
+
                 Directory.Delete(path, recursive);
             }
 
@@ -1601,7 +1687,6 @@ namespace MassRecallScEvo
                     DeleteInstalledPath(installPath, path);
                 }
 
-                DeleteDesktopShortcut();
                 TryDeleteFile(Path.Combine(StateDir, "state.txt"));
                 TryDeleteFile(Path.Combine(StateDir, "install-path.txt"));
                 TryDeleteFile(manifestPath);
@@ -1649,12 +1734,6 @@ namespace MassRecallScEvo
                 }
             }
 
-            private static void DeleteDesktopShortcut()
-            {
-                string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                TryDeleteFile(Path.Combine(desktopPath, "Mass Recall.lnk"));
-            }
-
             private static void RemoveScmrBankFiles()
             {
                 string documentsSc2 = Path.Combine(
@@ -1669,45 +1748,6 @@ namespace MassRecallScEvo
                 foreach (string bankFile in Directory.GetFiles(documentsSc2, "SCMR.SC2Bank", SearchOption.AllDirectories))
                 {
                     TryDeleteFile(bankFile);
-                }
-            }
-
-            private static void CreateDesktopShortcut(string installPath)
-            {
-                string targetPath = FindSwitcherPath(installPath);
-                string mapPath = FindCampaignLauncherMap(installPath);
-                string iconPath = FindMassRecallIcon(installPath);
-                string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                string shortcutPath = Path.Combine(desktopPath, "Mass Recall.lnk");
-
-                IShellLinkW shortcut = null;
-                try
-                {
-                    object shellLink = new ShellLink();
-                    shortcut = (IShellLinkW)shellLink;
-                    shortcut.SetPath(targetPath);
-                    shortcut.SetArguments("\"" + mapPath + "\"");
-                    shortcut.SetWorkingDirectory(Path.GetDirectoryName(targetPath));
-                    shortcut.SetDescription("Mass Recall");
-
-                    if (!string.IsNullOrEmpty(iconPath))
-                    {
-                        shortcut.SetIconLocation(iconPath, 0);
-                    }
-
-                    ((IPersistFile)shortcut).Save(shortcutPath, true);
-                }
-                finally
-                {
-                    ReleaseComObject(shortcut);
-                }
-            }
-
-            private static void ReleaseComObject(object instance)
-            {
-                if (instance != null && Marshal.IsComObject(instance))
-                {
-                    Marshal.ReleaseComObject(instance);
                 }
             }
 
@@ -1754,27 +1794,6 @@ namespace MassRecallScEvo
                 }
 
                 throw new InvalidOperationException("설치된 Maps 폴더에서 SCMR Campaign Launcher.SC2Map을 찾지 못했습니다.");
-            }
-
-            private static string FindMassRecallIcon(string installPath)
-            {
-                string mapsRoot = Path.Combine(installPath, "Maps");
-                string expected = Path.Combine(mapsRoot, @"Starcraft Mass Recall\icon.ico");
-                if (File.Exists(expected))
-                {
-                    return expected;
-                }
-
-                if (Directory.Exists(mapsRoot))
-                {
-                    string[] matches = Directory.GetFiles(mapsRoot, "icon.ico", SearchOption.AllDirectories);
-                    if (matches.Length > 0)
-                    {
-                        return matches[0];
-                    }
-                }
-
-                return null;
             }
 
             private static string FindStarCraft2Path()
@@ -1857,6 +1876,7 @@ namespace MassRecallScEvo
                 }
 
                 bool hasEntries = false;
+                bool allEntriesExist = true;
                 foreach (string line in File.ReadAllLines(manifestPath))
                 {
                     string path = line.Trim();
@@ -1868,11 +1888,17 @@ namespace MassRecallScEvo
                     hasEntries = true;
                     if (!File.Exists(path) && !Directory.Exists(path))
                     {
-                        return false;
+                        allEntriesExist = false;
+                        break;
                     }
                 }
 
-                return hasEntries;
+                if (hasEntries && allEntriesExist)
+                {
+                    return true;
+                }
+
+                return HasMassRecallFiles(installPath);
             }
 
             private static bool TryDetectExistingInstall(out string installPath)
@@ -2028,59 +2054,6 @@ namespace MassRecallScEvo
                 return File.ReadAllText(path).Trim();
             }
 
-        }
-
-        [ComImport]
-        [Guid("00021401-0000-0000-C000-000000000046")]
-        private sealed class ShellLink
-        {
-        }
-
-        [ComImport]
-        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        [Guid("000214F9-0000-0000-C000-000000000046")]
-        private interface IShellLinkW
-        {
-            void GetPath(
-                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile,
-                int cchMaxPath,
-                IntPtr pfd,
-                uint fFlags);
-
-            void GetIDList(out IntPtr ppidl);
-            void SetIDList(IntPtr pidl);
-
-            void GetDescription(
-                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName,
-                int cchMaxName);
-
-            void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-
-            void GetWorkingDirectory(
-                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir,
-                int cchMaxPath);
-
-            void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
-
-            void GetArguments(
-                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs,
-                int cchMaxPath);
-
-            void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
-            void GetHotkey(out short pwHotkey);
-            void SetHotkey(short wHotkey);
-            void GetShowCmd(out int piShowCmd);
-            void SetShowCmd(int iShowCmd);
-
-            void GetIconLocation(
-                [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath,
-                int cchIconPath,
-                out int piIcon);
-
-            void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
-            void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
-            void Resolve(IntPtr hwnd, uint fFlags);
-            void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
         }
 
         private sealed class Package
