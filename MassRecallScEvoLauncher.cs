@@ -83,16 +83,16 @@ namespace MassRecallScEvo
             private static readonly Color InstallingColor = Color.FromArgb(255, 158, 45);
             private static readonly Color TextColor = Color.FromArgb(218, 238, 239);
             private static readonly Color MutedTextColor = Color.FromArgb(130, 154, 164);
-
             private readonly Label statusDot;
             private readonly Label statusLabel;
-            private readonly ProgressBar progressBar;
+            private readonly Label installPathLabel;
+            private readonly TechProgressBar progressBar;
             private readonly Button actionButton;
             private readonly Button checkButton;
             private readonly Button uninstallButton;
-            private readonly CheckBox koreanVoiceCheckBox;
-            private readonly CheckBox englishVoiceCheckBox;
-            private readonly CheckBox removeBankCheckBox;
+            private readonly TechCheckBox koreanVoiceCheckBox;
+            private readonly TechCheckBox englishVoiceCheckBox;
+            private readonly TechCheckBox removeBankCheckBox;
             private readonly Label versionLabel;
             private UpdateInfo latestInfo;
             private bool suppressLanguageOptionChange;
@@ -100,7 +100,7 @@ namespace MassRecallScEvo
             public LauncherForm()
             {
                 Text = AppName;
-                ClientSize = new Size(720, 380);
+                ClientSize = new Size(720, 350);
                 BackColor = BackgroundColor;
                 FormBorderStyle = FormBorderStyle.None;
                 MaximizeBox = false;
@@ -145,16 +145,23 @@ namespace MassRecallScEvo
                 statusDot.Font = new Font("Segoe UI", 11, FontStyle.Bold);
                 statusDot.ForeColor = CyanColor;
                 statusDot.BackColor = Color.Transparent;
-                statusDot.SetBounds(20, 304, 20, 20);
+                statusDot.SetBounds(20, 282, 20, 20);
 
                 statusLabel = new Label();
                 statusLabel.Font = new Font("Segoe UI", 10);
                 statusLabel.ForeColor = TextColor;
                 statusLabel.BackColor = Color.Transparent;
                 statusLabel.TextAlign = ContentAlignment.MiddleLeft;
-                statusLabel.SetBounds(42, 302, 360, 24);
+                statusLabel.SetBounds(42, 280, 320, 24);
 
-                var bannerPanel = CreatePanel(20, 72, 400, 154);
+                installPathLabel = new Label();
+                installPathLabel.Font = new Font("Segoe UI", 9);
+                installPathLabel.ForeColor = MutedTextColor;
+                installPathLabel.BackColor = Color.Transparent;
+                installPathLabel.TextAlign = ContentAlignment.MiddleRight;
+                installPathLabel.SetBounds(380, 280, 320, 24);
+
+                var bannerPanel = CreatePanel(20, 50, 400, 154);
                 var bannerBox = new PictureBox();
                 bannerBox.BackColor = Color.Black;
                 bannerBox.SizeMode = PictureBoxSizeMode.Zoom;
@@ -176,43 +183,43 @@ namespace MassRecallScEvo
 
                 bannerPanel.Controls.Add(bannerBox);
 
-                var optionPanel = CreatePanel(444, 72, 256, 154);
+                var optionPanel = CreatePanel(444, 50, 256, 154);
                 var optionTitle = new Label();
                 optionTitle.Text = "설치 옵션";
                 optionTitle.Font = new Font("Segoe UI", 12, FontStyle.Bold);
                 optionTitle.ForeColor = AccentColor;
                 optionTitle.BackColor = Color.Transparent;
-                optionTitle.SetBounds(18, 14, 160, 26);
+                optionTitle.SetBounds(20, 12, 160, 26);
                 optionPanel.Controls.Add(optionTitle);
 
-                koreanVoiceCheckBox = new CheckBox();
+                koreanVoiceCheckBox = new TechCheckBox();
                 koreanVoiceCheckBox.Text = "한국어 음성";
                 koreanVoiceCheckBox.Font = new Font("Segoe UI", 10);
                 koreanVoiceCheckBox.ForeColor = TextColor;
                 koreanVoiceCheckBox.BackColor = Color.Transparent;
-                koreanVoiceCheckBox.AutoSize = true;
+                koreanVoiceCheckBox.AutoSize = false;
                 koreanVoiceCheckBox.Checked = true;
-                koreanVoiceCheckBox.SetBounds(20, 46, 170, 24);
+                koreanVoiceCheckBox.SetBounds(20, 42, 220, 24);
                 koreanVoiceCheckBox.CheckedChanged += OnLanguageOptionChanged;
                 optionPanel.Controls.Add(koreanVoiceCheckBox);
 
-                englishVoiceCheckBox = new CheckBox();
+                englishVoiceCheckBox = new TechCheckBox();
                 englishVoiceCheckBox.Text = "영어 음성";
                 englishVoiceCheckBox.Font = new Font("Segoe UI", 10);
                 englishVoiceCheckBox.ForeColor = TextColor;
                 englishVoiceCheckBox.BackColor = Color.Transparent;
-                englishVoiceCheckBox.AutoSize = true;
-                englishVoiceCheckBox.SetBounds(20, 72, 170, 24);
+                englishVoiceCheckBox.AutoSize = false;
+                englishVoiceCheckBox.SetBounds(20, 64, 220, 24);
                 englishVoiceCheckBox.CheckedChanged += OnLanguageOptionChanged;
                 optionPanel.Controls.Add(englishVoiceCheckBox);
 
-                removeBankCheckBox = new CheckBox();
+                removeBankCheckBox = new TechCheckBox();
                 removeBankCheckBox.Text = "SCMR.SC2Bank 제거";
                 removeBankCheckBox.Font = new Font("Segoe UI", 10);
                 removeBankCheckBox.ForeColor = TextColor;
                 removeBankCheckBox.BackColor = Color.Transparent;
-                removeBankCheckBox.AutoSize = true;
-                removeBankCheckBox.SetBounds(20, 108, 170, 24);
+                removeBankCheckBox.AutoSize = false;
+                removeBankCheckBox.SetBounds(20, 98, 220, 24);
                 optionPanel.Controls.Add(removeBankCheckBox);
 
                 var bankHelpLabel = new Label();
@@ -221,30 +228,30 @@ namespace MassRecallScEvo
                 bankHelpLabel.ForeColor = MutedTextColor;
                 bankHelpLabel.BackColor = Color.Transparent;
                 bankHelpLabel.TextAlign = ContentAlignment.MiddleLeft;
-                bankHelpLabel.SetBounds(40, 130, 200, 18);
+                bankHelpLabel.SetBounds(42, 122, 200, 18);
                 optionPanel.Controls.Add(bankHelpLabel);
 
                 OnLanguageOptionChanged(null, EventArgs.Empty);
 
-                progressBar = new ProgressBar();
-                progressBar.SetBounds(20, 330, 680, 22);
+                progressBar = new TechProgressBar();
+                progressBar.SetBounds(20, 312, 680, 18);
 
                 actionButton = new Button();
-                actionButton.SetBounds(550, 260, 150, 44);
+                actionButton.SetBounds(550, 224, 150, 44);
                 actionButton.Click += OnActionClick;
                 StyleNeonButton(actionButton, true);
 
                 checkButton = new Button();
-                checkButton.Text = "파일 검사";
-                checkButton.SetBounds(306, 261, 96, 40);
+                checkButton.Text = "파일 확인";
+                checkButton.SetBounds(306, 226, 96, 40);
                 checkButton.Click += OnCheckClick;
                 StyleNeonButton(checkButton, false);
 
                 uninstallButton = new Button();
                 uninstallButton.Text = "제거";
-                uninstallButton.SetBounds(420, 261, 96, 40);
+                uninstallButton.SetBounds(420, 226, 96, 40);
                 uninstallButton.Click += OnUninstallClick;
-                StyleNeonButton(uninstallButton, false);
+                StyleRedButton(uninstallButton);
 
                 Controls.Add(headerTitle);
                 Controls.Add(versionLabel);
@@ -253,6 +260,7 @@ namespace MassRecallScEvo
                 Controls.Add(topLine);
                 Controls.Add(statusDot);
                 Controls.Add(statusLabel);
+                Controls.Add(installPathLabel);
                 Controls.Add(bannerPanel);
                 Controls.Add(optionPanel);
                 Controls.Add(progressBar);
@@ -293,6 +301,23 @@ namespace MassRecallScEvo
                 else
                 {
                     versionLabel.Text = "v" + installedVersion;
+                }
+
+                // Show StarCraft II path
+                string path = ReadInstallPath();
+                if (string.IsNullOrEmpty(path))
+                {
+                    path = FindKnownStarCraft2Path();
+                }
+                if (!string.IsNullOrEmpty(path))
+                {
+                    installPathLabel.Text = "📁 " + path;
+                    installPathLabel.Visible = true;
+                }
+                else
+                {
+                    installPathLabel.Text = "";
+                    installPathLabel.Visible = false;
                 }
 
                 if (updateStatus)
@@ -342,6 +367,18 @@ namespace MassRecallScEvo
                 button.Font = new Font("Segoe UI", 11, FontStyle.Bold);
                 button.Cursor = Cursors.Hand;
             }
+
+            private static void StyleRedButton(Button button)
+            {
+                button.FlatStyle = FlatStyle.Flat;
+                button.FlatAppearance.BorderSize = 1;
+                button.FlatAppearance.BorderColor = Color.FromArgb(235, 74, 74);
+                button.BackColor = Color.FromArgb(45, 12, 12);
+                button.ForeColor = Color.FromArgb(255, 120, 120);
+                button.Font = new Font("Segoe UI", 11, FontStyle.Bold);
+                button.Cursor = Cursors.Hand;
+            }
+
 
             private static Font CreateTechFont(float size, FontStyle style)
             {
@@ -641,7 +678,7 @@ namespace MassRecallScEvo
                     string installPath = ReadInstallPath();
                     if (string.IsNullOrEmpty(installPath) || !Directory.Exists(installPath))
                     {
-                        throw new InvalidOperationException("설치 경로를 찾지 못했습니다. 파일 검사를 실행하거나 다시 설치하세요.");
+                        throw new InvalidOperationException("설치 경로를 찾지 못했습니다. 파일 확인을 실행하거나 다시 설치하세요.");
                     }
 
                     string targetPath = FindSwitcherPath(installPath);
@@ -676,8 +713,8 @@ namespace MassRecallScEvo
                 if (IsInstalled())
                 {
                     statusDot.ForeColor = CyanColor;
-                    statusLabel.Text = "파일 검사 완료";
-                    MessageBox.Show(this, "설치된 파일이 정상입니다.", "파일 검사", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    statusLabel.Text = "파일 확인 완료";
+                    MessageBox.Show(this, "설치된 파일이 정상입니다.", "파일 확인", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
@@ -687,8 +724,8 @@ namespace MassRecallScEvo
                     SaveDetectedState(detectedInstallPath);
                     RefreshUi(false);
                     statusDot.ForeColor = CyanColor;
-                    statusLabel.Text = "파일 검사 완료";
-                    MessageBox.Show(this, "파일 확인이 완료되었습니다.", "파일 검사", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    statusLabel.Text = "파일 확인 완료";
+                    MessageBox.Show(this, "파일 확인이 완료되었습니다.", "파일 확인", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
@@ -696,12 +733,12 @@ namespace MassRecallScEvo
                 if (HasInstallState())
                 {
                     statusLabel.Text = "설치 파일 확인 필요";
-                    MessageBox.Show(this, "설치 파일이 일부 누락되었습니다. 설치 버튼을 눌러 다시 설치하세요.", "파일 검사", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(this, "설치 파일이 일부 누락되었습니다. 설치 버튼을 눌러 다시 설치하세요.", "파일 확인", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
                 statusLabel.Text = "준비됨";
-                MessageBox.Show(this, "설치 기록이 없습니다.", "파일 검사", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, "설치 기록이 없습니다.", "파일 확인", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
 
             private void OnUninstallClick(object sender, EventArgs e)
@@ -2096,6 +2133,115 @@ namespace MassRecallScEvo
             public string EnglishVoiceSha256;
             public string VoiceSha256;
             public string ChangeLogUrl;
+        }
+
+        private sealed class TechProgressBar : Control
+        {
+            private int _value;
+            public int Value
+            {
+                get { return _value; }
+                set
+                {
+                    _value = Math.Max(0, Math.Min(100, value));
+                    Invalidate();
+                }
+            }
+
+            public TechProgressBar()
+            {
+                DoubleBuffered = true;
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                using (var bgBrush = new SolidBrush(Color.FromArgb(9, 22, 29)))
+                {
+                    e.Graphics.FillRectangle(bgBrush, ClientRectangle);
+                }
+                using (var borderPen = new Pen(Color.FromArgb(21, 58, 73)))
+                {
+                    e.Graphics.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
+                }
+                if (_value > 0)
+                {
+                    int fillWidth = (int)((Width - 2) * (_value / 100.0));
+                    if (fillWidth > 0)
+                    {
+                        using (var fillBrush = new System.Drawing.Drawing2D.LinearGradientBrush(
+                            new Rectangle(1, 1, fillWidth, Height - 2),
+                            Color.FromArgb(0, 184, 255),
+                            Color.FromArgb(0, 255, 156),
+                            0.0f))
+                        {
+                            e.Graphics.FillRectangle(fillBrush, 1, 1, fillWidth, Height - 2);
+                        }
+                    }
+                }
+            }
+        }
+
+        private sealed class TechCheckBox : CheckBox
+        {
+            public TechCheckBox()
+            {
+                DoubleBuffered = true;
+                Cursor = Cursors.Hand;
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                Color parentBg = Color.FromArgb(10, 18, 24);
+                if (Parent != null)
+                {
+                    parentBg = Parent.BackColor;
+                }
+                using (var bgBrush = new SolidBrush(parentBg))
+                {
+                    e.Graphics.FillRectangle(bgBrush, ClientRectangle);
+                }
+
+                int boxSize = 14;
+                int boxX = 0;
+                int boxY = (Height - boxSize) / 2;
+                Rectangle boxRect = new Rectangle(boxX, boxY, boxSize, boxSize);
+
+                Color borderColor = Checked ? Color.FromArgb(0, 255, 156) : Color.FromArgb(21, 58, 73);
+                Color fillColor = Checked ? Color.FromArgb(0, 55, 40) : Color.FromArgb(9, 22, 29);
+
+                using (var boxBg = new SolidBrush(fillColor))
+                {
+                    e.Graphics.FillRectangle(boxBg, boxRect);
+                }
+
+                using (var boxBorder = new Pen(borderColor, 1.5f))
+                {
+                    e.Graphics.DrawRectangle(boxBorder, boxX, boxY, boxSize - 1, boxSize - 1);
+                }
+
+                if (Checked)
+                {
+                    using (var checkPen = new Pen(Color.FromArgb(0, 255, 156), 2f))
+                    {
+                        e.Graphics.DrawLine(checkPen, boxX + 3, boxY + 7, boxX + 6, boxY + 10);
+                        e.Graphics.DrawLine(checkPen, boxX + 6, boxY + 10, boxX + 11, boxY + 4);
+                    }
+                }
+
+                Color textColor = Enabled ? Color.FromArgb(218, 238, 239) : Color.FromArgb(130, 154, 164);
+                using (var textBrush = new SolidBrush(textColor))
+                {
+                    Rectangle textRect = new Rectangle(boxSize + 8, 0, Width - boxSize - 8, Height);
+                    TextRenderer.DrawText(
+                        e.Graphics,
+                        Text,
+                        Font,
+                        textRect,
+                        textColor,
+                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                }
+            }
         }
     }
 }
