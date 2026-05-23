@@ -121,11 +121,11 @@ namespace MassRecallScEvo
 
                 versionLabel = new Label();
                 versionLabel.Text = "";
-                versionLabel.Font = CreateTechFont(8, FontStyle.Bold);
+                versionLabel.Font = new Font("Bahnschrift SemiBold", 9.5f, FontStyle.Regular);
                 versionLabel.ForeColor = AccentColor;
                 versionLabel.BackColor = Color.Transparent;
                 versionLabel.TextAlign = ContentAlignment.MiddleRight;
-                versionLabel.SetBounds(470, 6, 174, 22);
+                versionLabel.SetBounds(445, 6, 200, 22);
                 versionLabel.MouseDown += DragWindow;
 
                 var minimizeButton = CreateWindowButton("-");
@@ -141,21 +141,30 @@ namespace MassRecallScEvo
                 topLine.SetBounds(0, 32, 720, 1);
 
                 statusDot = new Label();
-                statusDot.Text = "●";
-                statusDot.Font = new Font("Segoe UI", 11, FontStyle.Bold);
                 statusDot.ForeColor = CyanColor;
                 statusDot.BackColor = Color.Transparent;
-                statusDot.SetBounds(20, 282, 20, 20);
+                statusDot.SetBounds(20, 280, 20, 24);
+                statusDot.Paint += delegate(object sender, PaintEventArgs e)
+                {
+                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    int dotSize = 8;
+                    int x = (statusDot.Width - dotSize) / 2;
+                    int y = (statusDot.Height - dotSize) / 2;
+                    using (var brush = new SolidBrush(statusDot.ForeColor))
+                    {
+                        e.Graphics.FillEllipse(brush, x, y, dotSize, dotSize);
+                    }
+                };
 
                 statusLabel = new Label();
-                statusLabel.Font = new Font("Segoe UI", 10);
+                statusLabel.Font = CreateTechFont(10, FontStyle.Regular);
                 statusLabel.ForeColor = TextColor;
                 statusLabel.BackColor = Color.Transparent;
                 statusLabel.TextAlign = ContentAlignment.MiddleLeft;
                 statusLabel.SetBounds(42, 280, 320, 24);
 
                 installPathLabel = new Label();
-                installPathLabel.Font = new Font("Segoe UI", 9);
+                installPathLabel.Font = CreateTechFont(9, FontStyle.Regular);
                 installPathLabel.ForeColor = MutedTextColor;
                 installPathLabel.BackColor = Color.Transparent;
                 installPathLabel.TextAlign = ContentAlignment.MiddleRight;
@@ -172,7 +181,7 @@ namespace MassRecallScEvo
 
                 var changeLogHint = new Label();
                 changeLogHint.Text = "수정 내역 확인";
-                changeLogHint.Font = new Font("Segoe UI", 8, FontStyle.Bold);
+                changeLogHint.Font = CreateTechFont(8, FontStyle.Bold);
                 changeLogHint.ForeColor = AccentColor;
                 changeLogHint.BackColor = Color.FromArgb(16, 0, 0, 0);
                 changeLogHint.TextAlign = ContentAlignment.MiddleLeft;
@@ -186,7 +195,7 @@ namespace MassRecallScEvo
                 var optionPanel = CreatePanel(444, 50, 256, 154);
                 var optionTitle = new Label();
                 optionTitle.Text = "설치 옵션";
-                optionTitle.Font = new Font("Segoe UI", 12, FontStyle.Bold);
+                optionTitle.Font = CreateTechFont(12, FontStyle.Bold);
                 optionTitle.ForeColor = AccentColor;
                 optionTitle.BackColor = Color.Transparent;
                 optionTitle.SetBounds(20, 12, 160, 26);
@@ -194,7 +203,7 @@ namespace MassRecallScEvo
 
                 koreanVoiceCheckBox = new TechCheckBox();
                 koreanVoiceCheckBox.Text = "한국어 음성";
-                koreanVoiceCheckBox.Font = new Font("Segoe UI", 10);
+                koreanVoiceCheckBox.Font = CreateTechFont(10, FontStyle.Regular);
                 koreanVoiceCheckBox.ForeColor = TextColor;
                 koreanVoiceCheckBox.BackColor = Color.Transparent;
                 koreanVoiceCheckBox.AutoSize = false;
@@ -205,7 +214,7 @@ namespace MassRecallScEvo
 
                 englishVoiceCheckBox = new TechCheckBox();
                 englishVoiceCheckBox.Text = "영어 음성";
-                englishVoiceCheckBox.Font = new Font("Segoe UI", 10);
+                englishVoiceCheckBox.Font = CreateTechFont(10, FontStyle.Regular);
                 englishVoiceCheckBox.ForeColor = TextColor;
                 englishVoiceCheckBox.BackColor = Color.Transparent;
                 englishVoiceCheckBox.AutoSize = false;
@@ -215,7 +224,7 @@ namespace MassRecallScEvo
 
                 removeBankCheckBox = new TechCheckBox();
                 removeBankCheckBox.Text = "SCMR.SC2Bank 제거";
-                removeBankCheckBox.Font = new Font("Segoe UI", 10);
+                removeBankCheckBox.Font = CreateTechFont(10, FontStyle.Regular);
                 removeBankCheckBox.ForeColor = TextColor;
                 removeBankCheckBox.BackColor = Color.Transparent;
                 removeBankCheckBox.AutoSize = false;
@@ -225,7 +234,7 @@ namespace MassRecallScEvo
 
                 var bankHelpLabel = new Label();
                 bankHelpLabel.Text = "SC Evo 버전 처음 설치 시 체크";
-                bankHelpLabel.Font = new Font("Segoe UI", 9);
+                bankHelpLabel.Font = CreateTechFont(9, FontStyle.Regular);
                 bankHelpLabel.ForeColor = Color.FromArgb(95, 115, 125);
                 bankHelpLabel.BackColor = Color.Transparent;
                 bankHelpLabel.TextAlign = ContentAlignment.MiddleLeft;
@@ -365,7 +374,7 @@ namespace MassRecallScEvo
                 button.FlatAppearance.BorderColor = primary ? AccentColor : BorderColor;
                 button.BackColor = primary ? Color.FromArgb(0, 55, 40) : Color.FromArgb(9, 22, 29);
                 button.ForeColor = primary ? AccentColor : TextColor;
-                button.Font = new Font("Segoe UI", 11, FontStyle.Bold);
+                button.Font = CreateTechFont(primary ? 16 : 11, FontStyle.Bold);
                 button.Cursor = Cursors.Hand;
             }
 
@@ -376,7 +385,7 @@ namespace MassRecallScEvo
                 button.FlatAppearance.BorderColor = Color.FromArgb(235, 74, 74);
                 button.BackColor = Color.FromArgb(45, 12, 12);
                 button.ForeColor = Color.FromArgb(255, 120, 120);
-                button.Font = new Font("Segoe UI", 11, FontStyle.Bold);
+                button.Font = CreateTechFont(11, FontStyle.Bold);
                 button.Cursor = Cursors.Hand;
             }
 
@@ -395,7 +404,7 @@ namespace MassRecallScEvo
                 button.FlatAppearance.BorderColor = BorderColor;
                 button.BackColor = Color.FromArgb(9, 22, 29);
                 button.ForeColor = TextColor;
-                button.Font = new Font("Segoe UI", 9, FontStyle.Bold);
+                button.Font = CreateTechFont(9, FontStyle.Bold);
                 button.Cursor = Cursors.Hand;
                 button.TabStop = false;
                 return button;
