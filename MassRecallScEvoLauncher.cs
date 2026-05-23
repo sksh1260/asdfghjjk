@@ -220,12 +220,13 @@ namespace MassRecallScEvo
                 removeBankCheckBox.BackColor = Color.Transparent;
                 removeBankCheckBox.AutoSize = false;
                 removeBankCheckBox.SetBounds(20, 98, 220, 24);
+                removeBankCheckBox.CheckedChanged += OnLanguageOptionChanged;
                 optionPanel.Controls.Add(removeBankCheckBox);
 
                 var bankHelpLabel = new Label();
                 bankHelpLabel.Text = "SC Evo 버전 처음 설치 시 체크";
                 bankHelpLabel.Font = new Font("Segoe UI", 9);
-                bankHelpLabel.ForeColor = MutedTextColor;
+                bankHelpLabel.ForeColor = Color.FromArgb(95, 115, 125);
                 bankHelpLabel.BackColor = Color.Transparent;
                 bankHelpLabel.TextAlign = ContentAlignment.MiddleLeft;
                 bankHelpLabel.SetBounds(42, 122, 200, 18);
