@@ -459,10 +459,7 @@ namespace MassRecallScEvo
                 }
             }
 
-            private void DragWindow(object sender, MouseEventArgs e)
-            {
-                // Legacy: kept for compatibility. Drag is now handled via WndProc HTCAPTION.
-            }
+
 
             private void DrawWindowBorder(object sender, PaintEventArgs e)
             {
