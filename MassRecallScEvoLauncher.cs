@@ -7,7 +7,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
-using System.Runtime.InteropServices;
+
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -22,7 +22,7 @@ using System.Windows.Forms;
 [assembly: AssemblyVersion("26.5.9.0")]
 [assembly: AssemblyFileVersion("26.5.9.0")]
 [assembly: AssemblyInformationalVersion("26.05.09")]
-[assembly: ComVisible(false)]
+
 
 namespace MassRecallScEvo
 {
@@ -71,8 +71,9 @@ namespace MassRecallScEvo
 
         private sealed class LauncherForm : Form
         {
-            private const int WmNclButtonDown = 0xA1;
+            private const int WmNcHitTest = 0x84;
             private const int HtCaption = 0x2;
+            private const int HtClient = 0x1;
 
             private static readonly Color BackgroundColor = Color.FromArgb(7, 13, 18);
             private static readonly Color PanelColor = Color.FromArgb(10, 18, 24);
@@ -105,35 +106,38 @@ namespace MassRecallScEvo
                 FormBorderStyle = FormBorderStyle.None;
                 MaximizeBox = false;
                 StartPosition = FormStartPosition.CenterScreen;
+                DoubleBuffered = true;
                 Paint += DrawWindowBorder;
+
+                // Windows 11: DWM rounded corners applied in OnHandleCreated.
+                // Windows 10 fallback: GraphicsPath Region (radius 8).
+                ApplyFallbackRegion();
 
                 Icon = LoadAppIcon();
 
 
-                var headerTitle = new Label();
+                var headerTitle = new TechLabel();
                 headerTitle.Text = "MASS RECALL SC EVO LAUNCHER";
                 headerTitle.Font = CreateTechFont(10, FontStyle.Bold);
                 headerTitle.ForeColor = AccentColor;
                 headerTitle.BackColor = Color.Transparent;
                 headerTitle.TextAlign = ContentAlignment.MiddleLeft;
                 headerTitle.SetBounds(12, 6, 430, 22);
-                headerTitle.MouseDown += DragWindow;
 
-                versionLabel = new Label();
+                versionLabel = new TechLabel();
                 versionLabel.Text = "";
                 versionLabel.Font = new Font("Bahnschrift SemiBold", 9.5f, FontStyle.Regular);
                 versionLabel.ForeColor = AccentColor;
                 versionLabel.BackColor = Color.Transparent;
                 versionLabel.TextAlign = ContentAlignment.MiddleRight;
                 versionLabel.SetBounds(445, 6, 200, 22);
-                versionLabel.MouseDown += DragWindow;
 
                 var minimizeButton = CreateWindowButton("-");
-                minimizeButton.SetBounds(652, 4, 28, 24);
+                minimizeButton.SetBounds(658, 4, 28, 24);
                 minimizeButton.Click += delegate { WindowState = FormWindowState.Minimized; };
 
                 var closeButton = CreateWindowButton("X");
-                closeButton.SetBounds(684, 4, 28, 24);
+                closeButton.SetBounds(688, 4, 28, 24);
                 closeButton.Click += delegate { Close(); };
 
                 var topLine = new Panel();
@@ -241,8 +245,6 @@ namespace MassRecallScEvo
                 bankHelpLabel.SetBounds(42, 122, 200, 18);
                 optionPanel.Controls.Add(bankHelpLabel);
 
-                OnLanguageOptionChanged(null, EventArgs.Empty);
-
                 progressBar = new TechProgressBar();
                 progressBar.SetBounds(20, 312, 680, 18);
 
@@ -283,6 +285,8 @@ namespace MassRecallScEvo
                 {
                     BeginCheckForUpdate();
                 }
+
+                ActiveControl = null;
             }
 
             private void RefreshUi(bool updateStatus)
@@ -400,9 +404,10 @@ namespace MassRecallScEvo
                 var button = new Button();
                 button.Text = text;
                 button.FlatStyle = FlatStyle.Flat;
-                button.FlatAppearance.BorderSize = 1;
-                button.FlatAppearance.BorderColor = BorderColor;
-                button.BackColor = Color.FromArgb(9, 22, 29);
+                button.FlatAppearance.BorderSize = 0;
+                button.FlatAppearance.MouseOverBackColor = BackgroundColor;
+                button.FlatAppearance.MouseDownBackColor = BackgroundColor;
+                button.BackColor = BackgroundColor;
                 button.ForeColor = TextColor;
                 button.Font = CreateTechFont(9, FontStyle.Bold);
                 button.Cursor = Cursors.Hand;
@@ -410,23 +415,90 @@ namespace MassRecallScEvo
                 return button;
             }
 
+            protected override void OnHandleCreated(EventArgs e)
+            {
+                base.OnHandleCreated(e);
+                // Windows 11: let DWM handle smooth rounded corners.
+                // DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2
+                try
+                {
+                    int pref = 2;
+                    NativeMethods.DwmSetWindowAttribute(Handle, 33, ref pref, 4);
+                    Region = null; // DWM owns the shape; remove pixel-aligned Region
+                }
+                catch
+                {
+                    // Windows 10 or DWM unavailable: keep GraphicsPath Region
+                }
+            }
+
+            protected override void WndProc(ref Message m)
+            {
+                base.WndProc(ref m);
+                // Return HTCAPTION for the top strip so Windows handles dragging natively.
+                if (m.Msg == WmNcHitTest && (int)m.Result == HtClient)
+                {
+                    int lp = m.LParam.ToInt32();
+                    Point pt = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
+                    if (pt.Y >= 0 && pt.Y < 32) // header height
+                        m.Result = (IntPtr)HtCaption;
+                }
+            }
+
+            private void ApplyFallbackRegion()
+            {
+                using (var rp = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    float d = 16f, w = Width, h = Height;
+                    rp.AddArc(0,     0,     d, d, 180, 90);
+                    rp.AddArc(w - d, 0,     d, d, 270, 90);
+                    rp.AddArc(w - d, h - d, d, d,   0, 90);
+                    rp.AddArc(0,     h - d, d, d,  90, 90);
+                    rp.CloseAllFigures();
+                    Region = new Region(rp);
+                }
+            }
+
             private void DragWindow(object sender, MouseEventArgs e)
             {
-                if (e.Button != MouseButtons.Left)
-                {
-                    return;
-                }
-
-                ReleaseCapture();
-                SendMessage(Handle, WmNclButtonDown, HtCaption, 0);
+                // Legacy: kept for compatibility. Drag is now handled via WndProc HTCAPTION.
             }
 
             private void DrawWindowBorder(object sender, PaintEventArgs e)
             {
-                using (var pen = new Pen(BorderColor))
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                e.Graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                
+                const float penWidth = 2.0f;
+                const float inset = penWidth / 2f; // 1.0f
+                float radius = 7.0f; // Concentric corner radius (8.0f - 1.0f)
+                
+                var bounds = new RectangleF(inset, inset,
+                    ClientSize.Width - penWidth,
+                    ClientSize.Height - penWidth);
+                    
+                using (var path = GetRoundedRectanglePath(bounds, radius))
+                using (var pen = new Pen(BorderColor, penWidth))
                 {
-                    e.Graphics.DrawRectangle(pen, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
+                    e.Graphics.DrawPath(pen, path);
                 }
+            }
+
+            private static System.Drawing.Drawing2D.GraphicsPath GetRoundedRectanglePath(RectangleF bounds, float radius)
+            {
+                var path = new System.Drawing.Drawing2D.GraphicsPath();
+                if (radius <= 0f)
+                {
+                    path.AddRectangle(bounds);
+                    return path;
+                }
+                float size = radius * 2f;
+                path.AddArc(bounds.X, bounds.Y, size, size, 180, 90);
+                path.AddArc(bounds.Right - size, bounds.Y, size, size, 270, 90);
+                path.AddArc(bounds.Right - size, bounds.Bottom - size, size, size, 0, 90);
+                path.AddArc(bounds.X, bounds.Bottom - size, size, size, 90, 90);
+                path.CloseAllFigures();
+                return path;
             }
 
             private static void OpenChangeLog(object sender, EventArgs e)
@@ -557,12 +629,6 @@ namespace MassRecallScEvo
                 return null;
             }
 
-            [DllImport("user32.dll")]
-            private static extern bool ReleaseCapture();
-
-            [DllImport("user32.dll")]
-            private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
-
             private void OnLanguageOptionChanged(object sender, EventArgs e)
             {
                 if (suppressLanguageOptionChange)
@@ -597,8 +663,8 @@ namespace MassRecallScEvo
                 bool installed = IsInstalled();
                 koreanVoiceCheckBox.Enabled = !installed;
                 englishVoiceCheckBox.Enabled = !installed;
-                OnLanguageOptionChanged(null, EventArgs.Empty);
             }
+
             private void OnActionClick(object sender, EventArgs e)
             {
                 if (IsInstalled() && !HasUpdateAvailable())
@@ -628,7 +694,7 @@ namespace MassRecallScEvo
                     bool removeBankFiles = removeBankCheckBox.Checked;
                     ThreadPool.QueueUserWorkItem(delegate
                     {
-                        InstallInBackground(installPath, installEnglishVoice, removeBankFiles);
+                        RunInstall(installPath, installEnglishVoice, removeBankFiles);
                     });
                 }
                 catch (Exception ex)
@@ -640,7 +706,7 @@ namespace MassRecallScEvo
                 }
             }
 
-            private void InstallInBackground(string installPath, bool installEnglishVoice, bool removeBankFiles)
+            private void RunInstall(string installPath, bool installEnglishVoice, bool removeBankFiles)
             {
                 try
                 {
@@ -655,7 +721,7 @@ namespace MassRecallScEvo
                         SetStatus("SCMR.SC2Bank 제거 중...");
                         RemoveScmrBankFiles();
                     }
-                    InstallPackages(installPath, installEnglishVoice);
+                    ApplyPackages(installPath, installEnglishVoice);
                     RefreshLatestInfoForInstall();
                     SaveState(installPath);
                     RunOnUi(delegate
@@ -776,11 +842,11 @@ namespace MassRecallScEvo
 
                 ThreadPool.QueueUserWorkItem(delegate
                 {
-                    UninstallInBackground();
+                    RunUninstall();
                 });
             }
 
-            private void UninstallInBackground()
+            private void RunUninstall()
             {
                 try
                 {
@@ -818,19 +884,19 @@ namespace MassRecallScEvo
                 RefreshUi(false);
             }
 
-            private void InstallPackages(string installPath, bool installEnglishVoice)
+            private void ApplyPackages(string installPath, bool installEnglishVoice)
             {
                 Package voicePackage = installEnglishVoice ? Packages[2] : Packages[1];
 
                 SetDownloadProgress(0);
-                string mainArchivePath = DownloadPackage(Packages[0], 0, 45);
+                string mainArchivePath = FetchPackage(Packages[0], 0, 45);
 
                 ExtractMainPackage(mainArchivePath, installPath, installEnglishVoice);
                 TryDeleteFile(mainArchivePath);
                 SetProgress(50);
 
                 SetDownloadProgress(50);
-                string voiceArchivePath = DownloadPackage(voicePackage, 50, 45);
+                string voiceArchivePath = FetchPackage(voicePackage, 50, 45);
 
                 ExtractVoicePackage(voicePackage, voiceArchivePath, installPath);
                 TryDeleteFile(voiceArchivePath);
@@ -874,11 +940,11 @@ namespace MassRecallScEvo
                 action();
             }
 
-            private string DownloadPackage(Package package, int basePercent, int rangePercent)
+            private string FetchPackage(Package package, int basePercent, int rangePercent)
             {
                 Directory.CreateDirectory(CacheDir);
                 string target = Path.Combine(CacheDir, package.FileName);
-                DownloadToFile(GetPackageUrl(package), target, basePercent, rangePercent);
+                StreamToFile(GetPackageUrl(package), target, basePercent, rangePercent);
                 VerifyPackageSha256(package, target);
 
                 if (!LooksLikeZip(target))
@@ -921,45 +987,45 @@ namespace MassRecallScEvo
                 return package.Url;
             }
 
-            private void DownloadToFile(
+            private void StreamToFile(
                 string url,
                 string target,
                 int basePercent,
                 int rangePercent)
             {
                 EnsureHttpsUrl(url);
-                using (HttpClient client = CreateHttpClient())
+                using (HttpClient client = BuildHttpClient())
                 using (HttpResponseMessage response = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).Result)
                 {
                     response.EnsureSuccessStatusCode();
                     EnsureHttpsUrl(response.RequestMessage.RequestUri.AbsoluteUri);
                     using (var input = response.Content.ReadAsStreamAsync().Result)
-                using (var output = File.Create(target))
-                {
-                    long total = response.Content.Headers.ContentLength.HasValue
-                        ? response.Content.Headers.ContentLength.Value
-                        : -1;
-                    long downloaded = 0;
-                    byte[] buffer = new byte[256 * 1024];
-
-                    while (true)
+                    using (var output = File.Create(target))
                     {
-                        int read = input.Read(buffer, 0, buffer.Length);
-                        if (read <= 0)
-                        {
-                            break;
-                        }
+                        long total = response.Content.Headers.ContentLength.HasValue
+                            ? response.Content.Headers.ContentLength.Value
+                            : -1;
+                        long downloaded = 0;
+                        byte[] buffer = new byte[256 * 1024];
 
-                        output.Write(buffer, 0, read);
-                        downloaded += read;
-
-                        if (total > 0)
+                        while (true)
                         {
-                            int percent = basePercent + (int)((downloaded / (double)total) * rangePercent);
-                            SetDownloadProgress(percent);
+                            int read = input.Read(buffer, 0, buffer.Length);
+                            if (read <= 0)
+                            {
+                                break;
+                            }
+
+                            output.Write(buffer, 0, read);
+                            downloaded += read;
+
+                            if (total > 0)
+                            {
+                                int percent = basePercent + (int)((downloaded / (double)total) * rangePercent);
+                                SetDownloadProgress(percent);
+                            }
                         }
                     }
-                }
                 }
             }
 
@@ -1034,7 +1100,7 @@ namespace MassRecallScEvo
 
             private static UpdateInfo LoadLatestInfo()
             {
-                string json = DownloadText(LatestInfoUrl);
+                string json = FetchText(LatestInfoUrl);
 
                 return new UpdateInfo
                 {
@@ -1051,10 +1117,10 @@ namespace MassRecallScEvo
                 };
             }
 
-            private static string DownloadText(string url)
+            private static string FetchText(string url)
             {
                 EnsureHttpsUrl(url);
-                using (HttpClient client = CreateHttpClient())
+                using (HttpClient client = BuildHttpClient())
                 using (HttpResponseMessage response = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).Result)
                 {
                     response.EnsureSuccessStatusCode();
@@ -1067,7 +1133,7 @@ namespace MassRecallScEvo
                 }
             }
 
-            private static HttpClient CreateHttpClient()
+            private static HttpClient BuildHttpClient()
             {
                 var handler = new HttpClientHandler
                 {
@@ -2240,18 +2306,38 @@ namespace MassRecallScEvo
                 }
 
                 Color textColor = Enabled ? Color.FromArgb(218, 238, 239) : Color.FromArgb(130, 154, 164);
-                using (var textBrush = new SolidBrush(textColor))
-                {
-                    Rectangle textRect = new Rectangle(boxSize + 8, 0, Width - boxSize - 8, Height);
-                    TextRenderer.DrawText(
-                        e.Graphics,
-                        Text,
-                        Font,
-                        textRect,
-                        textColor,
-                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-                }
+                Rectangle textRect = new Rectangle(boxSize + 8, 0, Width - boxSize - 8, Height);
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    Text,
+                    Font,
+                    textRect,
+                    textColor,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             }
         }
+
+        private sealed class TechLabel : Label
+        {
+            protected override void WndProc(ref Message m)
+            {
+                const int WmNcHitTest = 0x84;
+                const int HtTransparent = -1;
+
+                if (m.Msg == WmNcHitTest)
+                {
+                    m.Result = (IntPtr)HtTransparent;
+                    return;
+                }
+                base.WndProc(ref m);
+            }
+        }
+    }
+
+    internal static class NativeMethods
+    {
+        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+        internal static extern int DwmSetWindowAttribute(
+            IntPtr hwnd, int attr, ref int attrValue, int attrSize);
     }
 }
