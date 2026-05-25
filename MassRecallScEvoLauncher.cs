@@ -2280,8 +2280,22 @@ namespace MassRecallScEvo
                 int boxY = (Height - boxSize) / 2;
                 Rectangle boxRect = new Rectangle(boxX, boxY, boxSize, boxSize);
 
-                Color borderColor = Checked ? Color.FromArgb(0, 255, 156) : Color.FromArgb(21, 58, 73);
-                Color fillColor = Checked ? Color.FromArgb(0, 55, 40) : Color.FromArgb(9, 22, 29);
+                Color borderColor;
+                Color fillColor;
+                Color checkMarkColor;
+
+                if (Enabled)
+                {
+                    borderColor = Checked ? Color.FromArgb(0, 255, 156) : Color.FromArgb(21, 58, 73);
+                    fillColor = Checked ? Color.FromArgb(0, 55, 40) : Color.FromArgb(9, 22, 29);
+                    checkMarkColor = Color.FromArgb(0, 255, 156);
+                }
+                else
+                {
+                    borderColor = Checked ? Color.FromArgb(50, 75, 80) : Color.FromArgb(20, 30, 35);
+                    fillColor = Checked ? Color.FromArgb(22, 35, 32) : Color.FromArgb(10, 15, 18);
+                    checkMarkColor = Color.FromArgb(100, 120, 125);
+                }
 
                 using (var boxBg = new SolidBrush(fillColor))
                 {
@@ -2295,7 +2309,7 @@ namespace MassRecallScEvo
 
                 if (Checked)
                 {
-                    using (var checkPen = new Pen(Color.FromArgb(0, 255, 156), 2f))
+                    using (var checkPen = new Pen(checkMarkColor, 2f))
                     {
                         e.Graphics.DrawLine(checkPen, boxX + 3, boxY + 7, boxX + 6, boxY + 10);
                         e.Graphics.DrawLine(checkPen, boxX + 6, boxY + 10, boxX + 11, boxY + 4);
