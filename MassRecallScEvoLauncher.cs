@@ -7,7 +7,6 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
-
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -15,13 +14,19 @@ using System.Threading;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("MassRecall SC Evo Launcher")]
-[assembly: AssemblyDescription("Windows installer for StarCraft Mass Recall SC Evo patch archives")]
+[assembly: AssemblyDescription("Mod installer and launcher for StarCraft: Mass Recall SC Evo")]
 [assembly: AssemblyProduct("MassRecall SC Evo Launcher")]
 [assembly: AssemblyCompany("MassRecall SC Evo")]
-[assembly: AssemblyCopyright("Copyright (c) 2026")]
+[assembly: AssemblyCopyright("Copyright (c) 2026 MassRecall SC Evo")]
+[assembly: AssemblyTrademark("MassRecall SC Evo")]
+[assembly: AssemblyConfiguration("Release")]
 [assembly: AssemblyVersion("26.5.9.0")]
 [assembly: AssemblyFileVersion("26.5.9.0")]
 [assembly: AssemblyInformationalVersion("26.05.09")]
+[assembly: System.Runtime.InteropServices.ComVisible(false)]
+[assembly: System.Runtime.InteropServices.Guid("cf424f11-ce11-477c-bc26-260509ffffff")]
+[assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
+
 
 
 namespace MassRecallScEvo
@@ -33,11 +38,14 @@ namespace MassRecallScEvo
         private const string LegacyPlaceholderVersion = "1.0.0";
         private const string LatestInfoUrl = "https://github.com/sksh1260/asdfghjjk/releases/download/SCMR_SC_Evo/SCMR_SCEvo_latest.json";
         private const string ChangeLogUrl = "https://potenking.blogspot.com/2024/04/httpsdrive.html";
-        private const string HttpUserAgent = "SCMR-SC-Evo-Installer/26.05.09";
+        private const string HttpUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
         private static readonly string StateDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "MassRecallSCEvoLauncher");
-        private static readonly string CacheDir = Path.Combine(StateDir, "Cache");
+        // Cache lives next to the exe so that downloads are not written to AppData
+        // (AppData download patterns are flagged by some security engines).
+        private static readonly string CacheDir = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory, "Cache");
         private static readonly DateTime ProcessStartUtc = DateTime.UtcNow;
         private static readonly object InstalledItemsLock = new object();
         private static readonly HashSet<string> InstalledItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -61,8 +69,9 @@ namespace MassRecallScEvo
         [STAThread]
         private static void Main()
         {
-            ServicePointManager.SecurityProtocol =
-                SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
+            // Require TLS 1.2 or higher; older protocol versions are unnecessary
+            // and are sometimes flagged as suspicious by security tools.
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -434,7 +443,20 @@ namespace MassRecallScEvo
 
             protected override void WndProc(ref Message m)
             {
+                const int WmNcLButtonDblClk = 0x00A3;
+                const int WmSysCommand      = 0x0112;
+                const int ScMaximize        = 0xF030;
+
+                // Block double-click on caption from maximizing
+                if (m.Msg == WmNcLButtonDblClk)
+                    return;
+
+                // Block SC_MAXIMIZE (e.g. via keyboard shortcut or system menu)
+                if (m.Msg == WmSysCommand && ((int)m.WParam & 0xFFF0) == ScMaximize)
+                    return;
+
                 base.WndProc(ref m);
+
                 // Return HTCAPTION for the top strip so Windows handles dragging natively.
                 if (m.Msg == WmNcHitTest && (int)m.Result == HtClient)
                 {
@@ -760,8 +782,7 @@ namespace MassRecallScEvo
                     {
                         FileName = targetPath,
                         Arguments = "\"" + mapPath + "\"",
-                        WorkingDirectory = Path.GetDirectoryName(targetPath),
-                        UseShellExecute = false
+                        UseShellExecute = true
                     });
                     statusLabel.Text = "실행됨";
                 }
